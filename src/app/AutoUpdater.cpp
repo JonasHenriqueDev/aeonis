@@ -27,7 +27,7 @@ QString AutoUpdater::version() const { return QStringLiteral(AEONIS_VERSION); }
 void AutoUpdater::setAutomatic(bool enabled)
 {
     if (enabled && !m_timer.isActive()) {
-        m_timer.setInterval(60 * 1000);
+        m_timer.setInterval(3 * 1000); // o suficiente para a bandeja e a rede subirem
         m_timer.start();
     } else if (!enabled) {
         m_timer.stop();
@@ -113,7 +113,7 @@ void AutoUpdater::check()
     });
 }
 
-void AutoUpdater::downloadAndInstall()
+void AutoUpdater::downloadAndInstall(bool reopenWindow)
 {
     if (m_busy || m_assetUrl.isEmpty())
         return;
@@ -134,7 +134,7 @@ void AutoUpdater::downloadAndInstall()
             emit changed();
         }
     });
-    connect(m_reply, &QNetworkReply::finished, this, [this, reply = m_reply.data()] {
+    connect(m_reply, &QNetworkReply::finished, this, [this, reopenWindow, reply = m_reply.data()] {
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) {
             setStatus(QStringLiteral("Falha no download (%1).").arg(reply->errorString()), false);
@@ -155,7 +155,8 @@ void AutoUpdater::downloadAndInstall()
         f.close();
         Log::info(QStringLiteral("Atualização: iniciando %1").arg(path));
         if (!QProcess::startDetached(path, {QStringLiteral("/SILENT"), QStringLiteral("/SUPPRESSMSGBOXES"),
-                                            QStringLiteral("/NORESTART"), QStringLiteral("/UPDATE=1")})) {
+                                            QStringLiteral("/NORESTART"), QStringLiteral("/UPDATE=1"),
+                                            QStringLiteral("/OPENWINDOW=%1").arg(reopenWindow ? 1 : 0)})) {
             setStatus(QStringLiteral("Não foi possível iniciar o instalador."), false);
             return;
         }

@@ -106,6 +106,9 @@ qt_add_qml_module(Aeonis
         qml/PageHeader.qml
         qml/Player.qml
         qml/SettingsView.qml
+        qml/AboutView.qml
+        qml/SmoothScroll.qml
+        qml/TitleBar.qml
         qml/SettingRow.qml
         qml/AButton.qml
         qml/Format.js

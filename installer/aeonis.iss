@@ -78,8 +78,9 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: 
 
 [Run]
 Filename: "{app}\Aeonis.exe"; Parameters: "--after-update"; Description: "{cm:LaunchProgram,Aeonis}"; Flags: nowait postinstall skipifsilent
-; Atualização automática (instalador silencioso com /UPDATE=1): reabre na bandeja.
-Filename: "{app}\Aeonis.exe"; Parameters: "--after-update --minimized"; Flags: nowait runasoriginaluser; Check: IsUpdate
+; Atualização automática (instalador silencioso com /UPDATE=1): reabre com a janela se ela estava
+; aberta (/OPENWINDOW=1), senão só na bandeja.
+Filename: "{app}\Aeonis.exe"; Parameters: "--after-update {code:AfterUpdateArgs}"; Flags: nowait runasoriginaluser; Check: IsUpdate
 
 [UninstallDelete]
 ; Remove só caches/buffer; configurações e vídeos do usuário são preservados.
@@ -91,4 +92,12 @@ Type: filesandordirs; Name: "{localappdata}\Aeonis\webview"
 function IsUpdate(): Boolean;
 begin
   Result := ExpandConstant('{param:UPDATE|0}') = '1';
+end;
+
+function AfterUpdateArgs(Param: String): String;
+begin
+  if ExpandConstant('{param:OPENWINDOW|0}') = '1' then
+    Result := ''
+  else
+    Result := '--minimized';
 end;

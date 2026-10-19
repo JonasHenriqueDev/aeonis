@@ -13,9 +13,10 @@ ApplicationWindow {
     visible: true
     title: "Aeonis"
     color: Theme.bg
+    flags: Qt.Window | Qt.FramelessWindowHint // barra de título própria (TitleBar.qml + WindowHost)
     font.family: Theme.font
 
-    property string view: InitialPage === "settings" ? "settings" : InitialPage === "clips" ? "clips" : "matches"
+    property string view: ["settings", "about", "clips"].includes(InitialPage) ? InitialPage : "matches"
     property string gameFilter: ""
     property var current: null        // clipe aberto no player
     property var thumbs: ({})         // id -> { url, duration } gerados depois da varredura
@@ -23,6 +24,9 @@ ApplicationWindow {
     property bool openedPlayer: false
     property bool debugPlayer: InitialPage === "player"
     property bool playerFullscreen: false // vídeo ocupando a tela toda
+    // Lidas pelo TitleBarFilter (C++) para saber onde arrastar a janela.
+    readonly property real titleBarHeight: titleBar.visible ? titleBar.height : 0
+    readonly property real titleBarButtonsWidth: titleBar.buttonsWidth
     property int visibilityBeforeFullscreen: Window.Windowed
 
     function setPlayerFullscreen(on) {
@@ -88,8 +92,15 @@ ApplicationWindow {
         }
     }
 
+    TitleBar {
+        id: titleBar
+        visible: !win.playerFullscreen
+        anchors { left: parent.left; right: parent.right; top: parent.top }
+        height: visible ? 36 : 0
+    }
+
     RowLayout {
-        anchors.fill: parent
+        anchors { left: parent.left; right: parent.right; top: titleBar.bottom; bottom: parent.bottom }
         spacing: 0
 
         Sidebar {
@@ -105,7 +116,7 @@ ApplicationWindow {
             Loader {
                 anchors.fill: parent
                 visible: !win.current
-                sourceComponent: win.view === "settings" ? settingsPage : win.view === "clips" ? clipsPage : matchesPage
+                sourceComponent: win.view === "settings" ? settingsPage : win.view === "about" ? aboutPage : win.view === "clips" ? clipsPage : matchesPage
             }
             Loader {
                 anchors.fill: parent
@@ -118,6 +129,16 @@ ApplicationWindow {
     Component { id: matchesPage; MatchesView {} }
     Component { id: clipsPage; ClipsView {} }
     Component { id: settingsPage; SettingsView {} }
+    Component { id: aboutPage; AboutView {} }
+
+    // Contorno da janela (sem a moldura do Windows), só quando ela não ocupa a tela.
+    Rectangle {
+        anchors.fill: parent
+        visible: win.visibility === Window.Windowed
+        color: "transparent"
+        border.color: Theme.line
+        z: 200
+    }
 
     Toasts {
         id: toasts

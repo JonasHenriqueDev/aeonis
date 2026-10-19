@@ -71,6 +71,8 @@ private:
     void onGameStarted(const GameDef &game, HMONITOR monitor, const QString &exe);
     void onGameStopped(const GameDef &game);
     void startDesktopBufferIfWanted();
+    /// Atualização automática: instala a versão encontrada se nada estiver sendo jogado/gravado.
+    void installUpdateIfIdle();
     void registerHotkeys();
     void enforceQuota();
     void updateUi();

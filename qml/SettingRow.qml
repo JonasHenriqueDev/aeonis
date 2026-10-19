@@ -79,38 +79,46 @@ Item {
                     if (v !== -1) row.edited(v)
                 }
             }
-            TextField {
+            LiveField {
                 visible: preset.custom
                 implicitWidth: 70
-                text: String(row.value)
                 horizontalAlignment: Text.AlignRight
                 validator: IntValidator { bottom: 2; top: 150 }
-                onEditingFinished: {
-                    const v = parseInt(text || "0")
-                    if (!isNaN(v) && v !== row.value) row.edited(v)
-                }
+                source: String(row.value)
+                onTyped: t => { const v = parseInt(t); if (!isNaN(v)) row.edited(v) }
             }
             Text { visible: preset.custom; text: "Mbps"; color: Theme.muted; font.pixelSize: 13 }
         }
     }
     Component {
         id: numberControl
-        TextField {
+        LiveField {
             implicitWidth: 140
-            text: String(row.value)
             horizontalAlignment: Text.AlignRight
             validator: row.field.type === "int" ? intValidator : doubleValidator
-            onEditingFinished: {
-                const v = row.field.type === "int" ? parseInt(text || "0") : parseFloat((text || "0").replace(",", "."))
-                if (!isNaN(v) && v !== row.value) row.edited(v)
+            source: String(row.value)
+            onTyped: t => {
+                const v = row.field.type === "int" ? parseInt(t) : parseFloat(t.replace(",", "."))
+                if (!isNaN(v)) row.edited(v)
             }
             IntValidator { id: intValidator; bottom: 0; top: 100000 }
             DoubleValidator { id: doubleValidator; bottom: 0; top: 100000; notation: DoubleValidator.StandardNotation }
         }
     }
+    // Campo que avisa a alteração a cada tecla (a barra "Salvar" aparece na hora) sem que o valor
+    // normalizado sobrescreva o que está sendo digitado; fora da edição acompanha `source` (Descartar).
+    component LiveField: TextField {
+        id: lf
+        property string source
+        signal typed(string text)
+        Component.onCompleted: text = source // sem binding: o que é digitado não é reescrito
+        onTextEdited: if (acceptableInput || !validator) typed(text)
+        onSourceChanged: if (!activeFocus) text = source
+        onEditingFinished: text = source
+    }
     Component {
         id: textControl
-        TextField { implicitWidth: 300; text: row.value; onEditingFinished: if (text !== row.value) row.edited(text) }
+        LiveField { implicitWidth: 300; source: row.value; onTyped: t => row.edited(t) }
     }
     Component {
         id: hotkeyControl
@@ -134,11 +142,11 @@ Item {
         id: folderControl
         RowLayout {
             spacing: 8
-            TextField {
+            LiveField {
                 id: folderField
                 implicitWidth: 320
-                text: row.value
-                onEditingFinished: if (text !== row.value) row.edited(text)
+                source: row.value
+                onTyped: t => row.edited(t)
             }
             AButton { text: "Escolher"; onClicked: folderDialog.open() }
             FolderDialog {
@@ -154,10 +162,16 @@ Item {
             implicitWidth: 360
             implicitHeight: 110
             TextArea {
-                text: row.value
+                id: area
+                Component.onCompleted: text = row.value
                 placeholderText: "Meu Jogo=jogo.exe"
                 wrapMode: TextEdit.NoWrap
-                onEditingFinished: if (text !== row.value) row.edited(text)
+                // Marca a alteração a cada tecla; o texto só é reposto (ex.: Descartar) fora da edição.
+                onTextChanged: if (activeFocus && text !== row.value) row.edited(text)
+                Connections {
+                    target: row
+                    function onValueChanged() { if (!area.activeFocus) area.text = row.value }
+                }
             }
         }
     }

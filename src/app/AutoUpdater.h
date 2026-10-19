@@ -29,11 +29,12 @@ public:
     bool available() const { return !m_assetUrl.isEmpty(); }
     QString newVersion() const { return m_newVersion; }
 
-    /// Verificação automática: 1 min depois de abrir e a cada 24 h.
+    /// Verificação automática: logo ao abrir e a cada 24 h.
     void setAutomatic(bool enabled);
 
     Q_INVOKABLE void check();
-    Q_INVOKABLE void downloadAndInstall();
+    /// `reopenWindow`: o instalador reabre o Aeonis com a janela (senão, só na bandeja).
+    Q_INVOKABLE void downloadAndInstall(bool reopenWindow = true);
 
     /// "1.2.10" > "1.2.9"; sufixos de pré-release ficam abaixo da versão final.
     static int compareVersions(const QString &a, const QString &b);

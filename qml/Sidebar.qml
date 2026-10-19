@@ -94,7 +94,7 @@ Rectangle {
                 iconName: "grid"
                 on: win.gameFilter === ""
                 count: (win.lib.games || []).reduce((n, g) => n + g.clips, 0)
-                onClicked: { win.gameFilter = ""; if (win.view === "settings") win.view = "matches"; win.current = null }
+                onClicked: { win.gameFilter = ""; if (win.view === "settings" || win.view === "about") win.view = "matches"; win.current = null }
             }
             model: win.lib.games || []
             delegate: NavButton {
@@ -105,11 +105,12 @@ Rectangle {
                 gameIconUrl: modelData.icon
                 count: modelData.clips
                 on: win.gameFilter === modelData.name
-                onClicked: { win.gameFilter = modelData.name; if (win.view === "settings") win.view = "matches"; win.current = null }
+                onClicked: { win.gameFilter = modelData.name; if (win.view === "settings" || win.view === "about") win.view = "matches"; win.current = null }
             }
         }
 
         NavButton { text: "Configurações"; iconName: "gear"; on: win.view === "settings" && !win.current; onClicked: win.go("settings") }
+        NavButton { text: "Sobre"; iconName: "info"; on: win.view === "about" && !win.current; onClicked: win.go("about") }
 
         // Status da captura
         Rectangle {

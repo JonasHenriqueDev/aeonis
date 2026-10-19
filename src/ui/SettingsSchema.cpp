@@ -91,7 +91,7 @@ QVariantList fields(const Settings &s)
         << field("HotkeyToggleRecording", "Atalhos", "Iniciar/parar gravação", "", "hotkey", s.hotkeyToggleRecording)
         << field("StartWithWindows", "Geral", "Iniciar com o Windows", "Abre só o ícone na bandeja ao entrar no Windows.", "bool", s.startWithWindows)
         << field("Notifications", "Geral", "Notificações", "Avisos do Windows ao detectar jogo, salvar clipe ou gravação. Falhas são sempre avisadas.", "bool", s.notifications)
-        << field("AutoUpdate", "Geral", "Verificar atualizações", "Consulta o GitHub uma vez por dia e avisa quando houver versão nova.", "bool", s.autoUpdate)
+        << field("AutoUpdate", "Geral", "Atualizar automaticamente", "Ao abrir o Aeonis (e uma vez por dia), baixa e instala sozinho a versão nova do GitHub. Durante um jogo ou gravação, espera terminar. Desligado, só verifica quando você pedir em Sobre.", "bool", s.autoUpdate)
         << field("CustomGames", "Geral", "Jogos personalizados", "Um por linha: Nome=executavel.exe;outro.exe", "multiline", s.customGames);
     return out;
 }

@@ -62,8 +62,12 @@ App::App(bool minimized, QObject *parent) : QObject(parent), m_settings(Settings
     m_updater = new AutoUpdater(this);
     m_updater->setAutomatic(m_settings.autoUpdate);
     connect(m_updater, &AutoUpdater::updateFound, this, [this](const QString &version) {
+        if (m_settings.autoUpdate) {
+            installUpdateIfIdle();
+            return;
+        }
         notify(QStringLiteral("Atualização disponível"),
-               QStringLiteral("O Aeonis %1 está disponível. Abra as configurações para instalar.").arg(version));
+               QStringLiteral("O Aeonis %1 está disponível. Abra Sobre para instalar.").arg(version));
     });
     connect(m_updater, &AutoUpdater::installerLaunched, this, &App::exit);
 
@@ -146,6 +150,19 @@ void App::startDesktopBufferIfWanted()
         startEngine(QStringLiteral("Desktop"), Monitors::byIndex(std::max(0, m_settings.monitorIndex)), {}, {});
 }
 
+void App::installUpdateIfIdle()
+{
+    // Como no Outplayed: atualiza sozinho ao abrir, mas nunca no meio de uma partida ou gravação;
+    // nesse caso tenta de novo quando o jogo fechar ou a gravação terminar.
+    if (!m_settings.autoUpdate || m_exiting || !m_updater->available() || m_updater->busy()
+        || m_activeGame || m_engine.recording())
+        return;
+    Log::info(QStringLiteral("Atualização automática para %1").arg(m_updater->newVersion()));
+    if (m_window->isOpen())
+        emit m_backend->toast(QStringLiteral("Atualizando para a versão %1…").arg(m_updater->newVersion()), QStringLiteral("info"));
+    m_updater->downloadAndInstall(m_window->isOpen());
+}
+
 void App::onGameStarted(const GameDef &game, HMONITOR monitor, const QString &exe)
 {
     m_activeGame = game;
@@ -194,6 +211,7 @@ void App::onGameStopped(const GameDef &)
         m_activeGame.reset();
         startDesktopBufferIfWanted();
         updateUi();
+        installUpdateIfIdle();
     });
 }
 
@@ -301,6 +319,7 @@ void App::toggleRecording()
         if (!m_activeGame && !m_settings.alwaysOnBuffer)
             stopEngineAndReport({});
         updateUi();
+        installUpdateIfIdle();
     });
 }
 

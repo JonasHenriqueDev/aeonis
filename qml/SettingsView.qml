@@ -4,7 +4,7 @@ import QtQuick.Layouts
 import "Format.js" as F
 
 // Configurações geradas a partir do esquema (SettingsSchema.cpp), agrupadas por categoria,
-// com a barra "alterações não salvas". Inclui armazenamento e atualizações.
+// com a barra "alterações não salvas". Inclui o armazenamento; versão e atualizações ficam em Sobre.
 Item {
     id: page
     property var dirty: ({})
@@ -39,14 +39,14 @@ Item {
         actions: false
     }
 
-    ScrollView {
+    SmoothScroll {
         id: scroll
         anchors { left: parent.left; right: parent.right; top: header.bottom; bottom: saveBar.visible ? saveBar.top : parent.bottom; topMargin: 16 }
-        contentWidth: availableWidth
-        clip: true
+        contentHeight: content.implicitHeight + 28
 
         ColumnLayout {
-            width: Math.min(scroll.availableWidth - 56, 980)
+            id: content
+            width: Math.min(scroll.width - 56, 980)
             x: 28
             spacing: 16
 
@@ -108,40 +108,6 @@ Item {
                     RowLayout {
                         AButton { text: "Abrir pasta dos vídeos"; iconName: "folder"; onClicked: App.openFolder() }
                         AButton { text: "Abrir log"; iconName: "external"; onClicked: App.openLog() }
-                    }
-                }
-            }
-
-            // Atualizações
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.bottomMargin: 28
-                implicitHeight: updates.implicitHeight + 32
-                radius: Theme.radius
-                color: Theme.panel
-                border.color: Theme.line
-                ColumnLayout {
-                    id: updates
-                    anchors { left: parent.left; right: parent.right; top: parent.top; margins: 18 }
-                    spacing: 8
-                    Text { text: "Sobre e atualizações"; color: Theme.text; font.pixelSize: 16; font.weight: Font.DemiBold }
-                    Text {
-                        Layout.fillWidth: true
-                        wrapMode: Text.Wrap
-                        color: Theme.muted
-                        font.pixelSize: 13
-                        text: "Aeonis " + App.updater.version + " · software livre (GPL-3.0-or-later). " + App.updater.status
-                    }
-                    RowLayout {
-                        AButton { text: "Verificar agora"; iconName: "refresh"; enabled: !App.updater.busy; onClicked: App.updater.check() }
-                        AButton {
-                            visible: App.updater.available
-                            text: "Baixar e instalar " + App.updater.newVersion
-                            iconName: "download"
-                            primary: true
-                            enabled: !App.updater.busy
-                            onClicked: App.updater.downloadAndInstall()
-                        }
                     }
                 }
             }

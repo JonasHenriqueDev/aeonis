@@ -64,6 +64,9 @@ Um processo só, C++20 + Qt 6 + FFmpeg (libav* linkado estaticamente via vcpkg).
 - **UI**: QML (estilo FluentWinUI3, tema escuro em `qml/Theme.qml`). `app/WindowHost` cria a janela só quando
   aberta e a destrói ao fechar para devolver memória; `ui/Backend` é o objeto `App` exposto ao QML. Arquivos
   QML novos precisam entrar em `qt_add_qml_module` no `CMakeLists.txt`.
+- **Barra de título própria**: a janela é `FramelessWindowHint` com `qml/TitleBar.qml`; o `TitleBarFilter`
+  (`app/WindowHost.cpp`) devolve os estilos nativos e trata `WM_NCCALCSIZE`/`WM_NCHITTEST` para manter arrastar,
+  Aero Snap e redimensionar. A área arrastável vem das propriedades `titleBarHeight`/`titleBarButtonsWidth` do `Main.qml`.
 - **Ícones**: `assets/icons/*.png` vão no qrc (`app/AppIcon`); `assets/aeonis.ico` vai no exe pelo `.rc`. O
   processo usa o AppUserModelID `Aeonis.Aeonis`, o mesmo dos atalhos criados em `installer/aeonis.iss`.
 
