@@ -9,7 +9,8 @@ Outplayed. Sem Overwolf, sem conta, sem nuvem, sem telemetria.
   **Counter-Strike 2** (abates, double/triple/quadra kill, ace), usando as APIs oficiais locais dos jogos.
 - **Detecção automática** de mais de 20 jogos (+ jogos personalizados): começa a gravar quando o jogo abre
   e para quando fecha.
-- **Biblioteca** com miniaturas agrupadas por jogo, corte rápido sem re-encode e exclusão para a lixeira.
+- **Biblioteca no estilo Outplayed**: partidas agrupadas por dia e por jogo, cada uma com seus destaques,
+  player integrado com marcadores dos destaques na linha do tempo, corte sem re-encode e exclusão para a lixeira.
 - Áudio do sistema e microfone (WASAPI), limite de armazenamento, iniciar com o Windows.
 
 ## Download
@@ -20,8 +21,12 @@ Também existe uma versão `portable.zip`: é só extrair e abrir o `Aeonis.exe`
 > Como o executável ainda não tem assinatura digital, o Windows SmartScreen pode avisar na primeira vez:
 > clique em **Mais informações → Executar assim mesmo**.
 
-Depois de instalado, o Aeonis fica no ícone da bandeja (perto do relógio). Abra um jogo e use **Alt+F10**
-para salvar os últimos 30 s ou **Alt+F9** para iniciar/parar uma gravação. Dê dois cliques no ícone para abrir a biblioteca.
+Ao abrir o Aeonis, aparece a biblioteca; ao fechá-la, ele continua no ícone da bandeja (perto do relógio).
+Abra um jogo e use **Alt+F10** para salvar os últimos 30 s ou **Alt+F9** para iniciar/parar uma gravação.
+Dê dois cliques no ícone para voltar à biblioteca.
+
+A interface usa o Microsoft Edge WebView2, que já vem no Windows 11 e na maioria dos Windows 10. Se ele
+faltar, o Aeonis oferece o link de download ao abrir a biblioteca (a gravação funciona sem ele).
 
 ## Por que é leve
 
@@ -31,7 +36,7 @@ para salvar os últimos 30 s ou **Alt+F9** para iniciar/parar uma gravação. D�
 | Encode | NVENC / AMF / Quick Sync com frames D3D11 direto (zero-copy) |
 | Buffer | segmentos de 2 s em disco, não um buffer gigante em RAM |
 | Clipes | concatenação `-c copy` — sem re-encode, salva em ~1 s |
-| App | bandeja do sistema em WinForms, ~40 MB de RAM, sem navegador embutido |
+| App | ~22 MB de RAM na bandeja. A janela (WebView2) só existe enquanto está aberta: fechou, os processos e a memória dela são liberados |
 
 Medido numa RTX 2060, 1080p60 a 20 Mbps: FFmpeg ~4% de **um** núcleo de CPU (≈0,2% do total em 20 threads).
 
@@ -67,9 +72,13 @@ src/Aeonis
 ├─ Capture/Highlighter.cs    junta eventos próximos num só clipe
 ├─ Games/GameWatcher.cs      detecção de jogos por processo
 ├─ Games/EventSources.cs     LoL Live Client Data API, CS2 Game State Integration
-└─ UI/                       bandeja, biblioteca, corte, configurações (PropertyGrid)
+├─ Core/Library.cs           histórico de partidas, clipes e eventos (library.jsonl)
+├─ UI/TrayApp.cs             bandeja, atalhos e ciclo de vida da captura
+├─ UI/MainWindow.cs          janela WebView2 + ponte de mensagens com a interface
+└─ Web/                      interface (HTML/CSS/JS) embutida no executável
 ```
-Dados do app: `%LOCALAPPDATA%\Aeonis` (configurações, log, buffer, miniaturas). Vídeos: `Vídeos\Aeonis\<Jogo>`.
+Dados do app: `%LOCALAPPDATA%\Aeonis` (configurações, histórico, log, buffer, miniaturas); a variável
+`AEONIS_DATA` aponta para outra pasta. Vídeos: `Vídeos\Aeonis\<Jogo>`.
 Gravações longas interrompidas por crash/queda de energia são recuperadas na próxima abertura.
 
 ## Limitações
