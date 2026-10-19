@@ -26,9 +26,10 @@ int frameThickness(HWND hwnd)
 
 } // namespace
 
-TitleBarFilter::TitleBarFilter(QQuickWindow *window) : m_window(window)
+TitleBarFilter::TitleBarFilter(QQuickWindow *window)
+    : m_window(window), m_hwnd(reinterpret_cast<HWND>(window->winId()))
 {
-    const HWND hwnd = reinterpret_cast<HWND>(window->winId());
+    const HWND hwnd = m_hwnd;
     // Sem moldura para o Qt, mas com os estilos de uma janela normal para o Windows (snap, animações).
     SetWindowLongPtrW(hwnd, GWL_STYLE,
                       GetWindowLongPtrW(hwnd, GWL_STYLE) | WS_THICKFRAME | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
@@ -42,9 +43,13 @@ TitleBarFilter::TitleBarFilter(QQuickWindow *window) : m_window(window)
 bool TitleBarFilter::nativeEventFilter(const QByteArray &, void *message, qintptr *result)
 {
     MSG *msg = static_cast<MSG *>(message);
-    if (!m_window || msg->hwnd != reinterpret_cast<HWND>(m_window->winId()))
+    if (!m_hwnd || msg->hwnd != m_hwnd || !m_window)
         return false;
     const HWND hwnd = msg->hwnd;
+    if (msg->message == WM_NCDESTROY) {
+        m_hwnd = nullptr; // a janela nativa acabou; daqui em diante o filtro não faz nada
+        return false;
+    }
 
     if (msg->message == WM_NCCALCSIZE && msg->wParam) {
         // A área do cliente ocupa a janela toda. Maximizada, a janela pode passar da área de trabalho
@@ -131,6 +136,10 @@ void WindowHost::show(const QString &page)
 
 void WindowHost::close()
 {
+    if (m_titleBar) {
+        qApp->removeNativeEventFilter(m_titleBar.get());
+        m_titleBar.reset();
+    }
     if (m_window)
         m_window->close();
     destroy();

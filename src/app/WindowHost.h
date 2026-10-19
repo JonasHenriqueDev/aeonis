@@ -9,6 +9,8 @@
 
 #include <memory>
 
+#include <windows.h>
+
 class QQmlApplicationEngine;
 class QQuickWindow;
 
@@ -27,6 +29,9 @@ public:
 
 private:
     QPointer<QQuickWindow> m_window;
+    // HWND guardado na criação: o filtro nunca chama winId(), que recriaria a janela nativa enquanto
+    // ela é destruída ao fechar (milhares de CreateWindowEx falhando, até derrubar o app na 1.1.0/1.1.1).
+    HWND m_hwnd = nullptr;
 };
 
 class WindowHost : public QObject {
