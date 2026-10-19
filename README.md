@@ -84,4 +84,8 @@ Gravações longas interrompidas por crash/queda de energia são recuperadas na 
 Veja [docs/ANALISE.md](docs/ANALISE.md). O Aeonis é uma reimplementação independente (clean-room) e não
 contém código nem assets do Outplayed/Overwolf. "Outplayed" é marca de seus respectivos donos.
 
-Licença: MIT. O FFmpeg é um programa separado (LGPL/GPL) executado como processo externo.
+## Licença
+[GPL-3.0-or-later](LICENSE). Você pode usar, estudar, modificar e redistribuir o Aeonis à vontade; quem
+distribuir uma versão modificada precisa publicar o código dela sob a mesma licença. Assim o projeto não
+pode virar um gravador fechado e cheio de anúncios. O FFmpeg é um programa separado (LGPL/GPL) executado
+como processo externo.
