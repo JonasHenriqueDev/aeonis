@@ -23,5 +23,7 @@ std::optional<double> generate(const QString &video, const QString &key);
 /// PNG do ícone do executável do jogo, para a barra lateral da biblioteca.
 void saveGameIcon(const QString &game, const QString &exe);
 QString gameIconPath(const QString &game);
+/// PNG do campeão do League of Legends (id do Data Dragon, ex.: "MonkeyKing").
+QString championIconPath(const QString &championId);
 
 } // namespace aeonis::MediaCache

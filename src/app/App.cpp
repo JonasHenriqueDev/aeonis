@@ -21,6 +21,7 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QFileInfo>
+#include <QJsonObject>
 #include <QProcess>
 #include <QUrl>
 
@@ -210,7 +211,7 @@ void App::onGameStarted(const GameDef &game, HMONITOR monitor, const QString &ex
             if (m_settings.autoHighlights && !m_events) {
                 auto options = [this] { return EventOptions{m_settings.clipDeaths, m_settings.clipAssists}; };
                 if (game.provider == QLatin1String("lol"))
-                    m_events = new LeagueEvents(options, this);
+                    m_events = new LeagueEvents(options, exe, this);
                 else if (game.provider == QLatin1String("cs2"))
                     m_events = new Cs2Events(options, exe, [this](const QString &t, const QString &m) { notify(t, m); }, this);
                 if (m_events) {
@@ -218,6 +219,17 @@ void App::onGameStarted(const GameDef &game, HMONITOR monitor, const QString &ex
                         Library::event(m_engine.sessionId(), reason); // marcador na linha do tempo
                         if (m_settings.mode != CaptureMode::SomentePartida)
                             m_highlighter->trigger(reason);
+                    });
+                    connect(m_events, &EventSource::marker, this, [this](const QString &label) {
+                        Library::event(m_engine.sessionId(), label);
+                    });
+                    connect(m_events, &EventSource::matchInfo, this, [this](const QJsonObject &info) {
+                        Library::matchInfo(m_engine.sessionId(), info);
+                    });
+                    // LoL: a gravação começa com o processo (tela de carregamento) e é adiantada
+                    // para o 0:00 do relógio quando a partida de fato começa.
+                    connect(m_events, &EventSource::clockStarted, this, [this](double gameTime) {
+                        enqueue([this, gameTime] { m_engine.moveRecordingStart(gameTime); }, [this] { updateUi(); });
                     });
                     m_events->start();
                 }
@@ -229,7 +241,7 @@ void App::onGameStarted(const GameDef &game, HMONITOR monitor, const QString &ex
         });
     };
     if (m_engine.running())
-        stopEngineAndReport(start);
+        stopEngineAndReport([start](bool) { start(); });
     else
         start();
 }
@@ -241,8 +253,13 @@ void App::onGameStopped(const GameDef &)
         m_events = nullptr;
     }
     m_highlighter->flush(); // entra na fila antes do encerramento
-    stopEngineAndReport([this] {
+    const QString session = m_engine.sessionId();
+    stopEngineAndReport([this, session](bool savedRecording) {
         m_activeGame.reset();
+        // Abre a partida para análise (se algo dela foi salvo).
+        if (m_settings.openMatchOnEnd && !m_exiting && !session.isEmpty()
+            && (savedRecording || m_lastClipSession == session))
+            showWindow(QStringLiteral("match:") + session);
         startDesktopBufferIfWanted();
         updateUi();
         installUpdateIfIdle();
@@ -265,7 +282,7 @@ void App::stopEngineAndReport(Done then)
         s.wasRunning = m_engine.running();
         s.recording = m_engine.stop();
         return s;
-    }, [this, requestedAt, then](Stopped s) {
+    }, [this, requestedAt, then = std::move(then)](Stopped s) {
         if (s.recording) {
             Library::clipSaved(s.session, s.recording.path, QStringLiteral("full"), labelOf(s.recording.path), requestedAt,
                                s.recording.duration, s.recordingStart);
@@ -277,7 +294,7 @@ void App::stopEngineAndReport(Done then)
         emit libraryChanged();
         updateUi();
         if (then)
-            then();
+            then(bool(s.recording));
     });
 }
 
@@ -301,6 +318,7 @@ void App::saveClip(int seconds, const QString &label, const QString &kind)
             return;
         }
         Library::clipSaved(r.first, r.second.path, kind, label, requestedAt, r.second.duration);
+        m_lastClipSession = r.first;
         notify(kind == QLatin1String("manual") ? QStringLiteral("Clipe salvo") : QStringLiteral("Destaque salvo: %1").arg(label),
                QFileInfo(r.second.path).fileName());
         enforceQuota();
@@ -463,7 +481,7 @@ void App::exit()
     }
     m_highlighter->flush();
     m_window->close();
-    stopEngineAndReport([this] {
+    stopEngineAndReport([this](bool) {
         m_tray->hide();
         m_ops.waitForDone();
         QCoreApplication::quit();

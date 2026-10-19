@@ -135,6 +135,41 @@ private slots:
         QCOMPARE(LeagueEvents::classify(ev(R"({"EventName":"BaronKill","KillerName":"Eu"})"), "Eu", none), QStringLiteral("Barão"));
     }
 
+    void leagueTimeline()
+    {
+        auto ev = [](const char *json) { return QJsonDocument::fromJson(json).object(); };
+        const QStringList allies{"Amigo", "Eu"};
+        auto mark = [&](const char *json) { return LeagueEvents::timelineLabel(ev(json), "Eu#BR1", "ORDER", allies); };
+        // Morte e assistência sempre marcam a linha do tempo, mesmo sem virar clipe.
+        QCOMPARE(mark(R"({"EventName":"ChampionKill","KillerName":"X","VictimName":"Eu"})"), QStringLiteral("Morte"));
+        QCOMPARE(mark(R"({"EventName":"ChampionKill","KillerName":"X","VictimName":"Y","Assisters":["Eu"]})"), QStringLiteral("Assistência"));
+        QCOMPARE(mark(R"({"EventName":"ChampionKill","KillerName":"X","VictimName":"Y"})"), QString());
+        // Objetivos do time (inclusive torre derrubada por tropa) contam; os do inimigo, não.
+        QCOMPARE(mark(R"({"EventName":"DragonKill","KillerName":"Amigo"})"), QStringLiteral("Dragão"));
+        QCOMPARE(mark(R"({"EventName":"DragonKill","KillerName":"Inimigo"})"), QString());
+        QCOMPARE(mark(R"({"EventName":"TurretKilled","TurretKilled":"Turret_T2_L_03_A","KillerName":"Minion_T1L0S0N0"})"), QStringLiteral("Torre"));
+        QCOMPARE(mark(R"({"EventName":"TurretKilled","TurretKilled":"Turret_T1_L_03_A","KillerName":"Inimigo"})"), QString());
+        QCOMPARE(mark(R"({"EventName":"InhibKilled","InhibKilled":"Barracks_T2_L1","KillerName":"Amigo"})"), QStringLiteral("Inibidor"));
+    }
+
+    void leaguePlayerInfo()
+    {
+        const QByteArray json = "{\"gameData\":{\"gameMode\":\"CLASSIC\",\"gameTime\":600.5},\"allPlayers\":["
+            "{\"riotId\":\"Outro#BR1\",\"championName\":\"Ahri\",\"rawChampionName\":\"game_character_displayname_Ahri\",\"scores\":{\"kills\":1}},"
+            "{\"riotId\":\"Eu#BR1\",\"championName\":\"Wukong\",\"rawChampionName\":\"game_character_displayname_MonkeyKing\","
+            "\"level\":11,\"scores\":{\"kills\":7,\"deaths\":2,\"assists\":5,\"creepScore\":140}}]}";
+        const QJsonObject root = QJsonDocument::fromJson(json).object();
+        const QJsonObject info = LeagueEvents::playerInfo(root, "Eu#BR1");
+        QCOMPARE(info.value("champion").toString(), QStringLiteral("Wukong"));
+        QCOMPARE(info.value("championId").toString(), QStringLiteral("MonkeyKing"));
+        QCOMPARE(info.value("kills").toInt(), 7);
+        QCOMPARE(info.value("deaths").toInt(), 2);
+        QCOMPARE(info.value("assists").toInt(), 5);
+        QCOMPARE(info.value("cs").toInt(), 140);
+        QCOMPARE(info.value("mode").toString(), QStringLiteral("Summoner's Rift"));
+        QCOMPARE(LeagueEvents::queueName(420), QStringLiteral("Ranqueada Solo/Duo"));
+    }
+
     void cs2Events()
     {
         Cs2Events cs([] { return EventOptions{true, false}; }, {}, {});

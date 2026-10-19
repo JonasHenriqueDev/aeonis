@@ -7,6 +7,7 @@
 #include <QDirIterator>
 #include <QFileInfo>
 #include <QHash>
+#include <QJsonObject>
 #include <QRegularExpression>
 #include <QUrl>
 
@@ -29,12 +30,15 @@ struct Clip {
     bool saved = false;
     QVariantList markers;
     QString session;
+    double matchTime = -1; // início do clipe no relógio da partida (s); -1 = desconhecido
 };
 
 struct Match {
     QString id, game;
     QDateTime start, end;
     QList<Clip> clips;
+    QVariantMap info;
+    QVariantList events;
 };
 
 QVariantMap toVariant(const Clip &c)
@@ -53,6 +57,7 @@ QVariantMap toVariant(const Clip &c)
     m.insert(QStringLiteral("thumb"), c.thumb ? QUrl::fromLocalFile(MediaCache::thumbPath(c.id)).toString() : QString());
     m.insert(QStringLiteral("saved"), c.saved);
     m.insert(QStringLiteral("markers"), c.markers);
+    m.insert(QStringLiteral("matchTime"), c.matchTime);
     return m;
 }
 
@@ -109,13 +114,29 @@ Result build(const QString &outputDir)
     QHash<QString, QDateTime> ends;
     QHash<QString, LibEntry> clipMeta; // caminho em minúsculas
     QHash<QString, QList<LibEntry>> events;
+    QHash<QString, QJsonObject> infos;
+    QHash<QString, QDateTime> fullStarts; // início da partida completa de cada sessão
     for (const LibEntry &e : entries) {
         if (e.t == QLatin1String("session")) sessions.insert(e.s, e);
         else if (e.t == QLatin1String("end")) ends.insert(e.s, e.at);
-        else if (e.t == QLatin1String("clip") && !e.path.isEmpty())
+        else if (e.t == QLatin1String("clip") && !e.path.isEmpty()) {
             clipMeta.insert(QDir::toNativeSeparators(e.path).toLower(), e);
+            if (e.kind == QLatin1String("full") && e.start.isValid() && !e.s.isEmpty()
+                && (!fullStarts.contains(e.s) || e.start < fullStarts.value(e.s)))
+                fullStarts.insert(e.s, e.start);
+        }
         else if (e.t == QLatin1String("event")) events[e.s].append(e);
+        else if (e.t == QLatin1String("info")) {
+            QJsonObject &merged = infos[e.s];
+            for (auto it = e.info.begin(); it != e.info.end(); ++it)
+                merged.insert(it.key(), it.value());
+        }
     }
+    // Relógio da partida: o 0:00 do jogo (LoL) ou o início da partida completa.
+    auto matchZero = [&](const QString &session) {
+        const QDateTime game = QDateTime::fromString(infos.value(session).value(QLatin1String("gameStart")).toString(), Qt::ISODateWithMs);
+        return game.isValid() ? game : fullStarts.value(session);
+    };
 
     QList<Clip> clips;
     qint64 total = 0, unsaved = 0;
@@ -156,6 +177,11 @@ Result build(const QString &outputDir)
                         c.markers.append(mk);
                     }
                 }
+            }
+            if (!c.session.isEmpty() && meta && meta->start.isValid() && c.kind != QLatin1String("full")) {
+                const QDateTime zero = matchZero(c.session);
+                if (zero.isValid())
+                    c.matchTime = std::max(0.0, std::round(zero.msecsTo(meta->start) / 100.0) / 10);
             }
             if (!c.thumb || !c.duration) {
                 QVariantMap missing;
@@ -200,6 +226,20 @@ Result build(const QString &outputDir)
         }
         order(list);
         m.clips = list;
+        const QJsonObject info = infos.value(s);
+        if (!info.isEmpty()) {
+            m.info = info.toVariantMap();
+            const QString icon = MediaCache::championIconPath(info.value(QLatin1String("championId")).toString());
+            if (info.contains(QLatin1String("championId")) && QFileInfo::exists(icon))
+                m.info.insert(QStringLiteral("championIcon"), QUrl::fromLocalFile(icon).toString());
+        }
+        const QDateTime zero = matchZero(s);
+        for (const LibEntry &ev : events.value(s)) {
+            QVariantMap mv;
+            mv.insert(QStringLiteral("label"), ev.label);
+            mv.insert(QStringLiteral("t"), zero.isValid() ? std::round(zero.msecsTo(ev.at) / 100.0) / 10 : -1.0);
+            m.events.append(mv);
+        }
         matches.append(m);
     }
     // Sem histórico: agrupa por jogo, abrindo uma nova "partida" quando há um intervalo grande entre vídeos.
@@ -230,6 +270,8 @@ Result build(const QString &outputDir)
         mv.insert(QStringLiteral("game"), m.game);
         mv.insert(QStringLiteral("start"), m.start);
         mv.insert(QStringLiteral("end"), m.end);
+        mv.insert(QStringLiteral("info"), m.info);
+        mv.insert(QStringLiteral("events"), m.events);
         QVariantList cl;
         for (const Clip &c : m.clips)
             cl.append(toVariant(c));

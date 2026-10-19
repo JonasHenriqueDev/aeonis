@@ -23,7 +23,7 @@ const char *const KnownKeys[] = {
     "OutputDir", "Mode", "Encoder", "Fps", "BitrateMbps", "MonitorIndex", "DrawMouse", "AlwaysOnBuffer",
     "ReplaySeconds", "ClipPreSeconds", "ClipPostSeconds", "AutoHighlights", "ClipDeaths", "ClipAssists",
     "MaxStorageGb", "SystemAudio", "Microphone", "MicDevice", "HotkeySaveClip", "HotkeyToggleRecording",
-    "StartWithWindows", "Notifications", "AutoUpdate", "CustomGames",
+    "StartWithWindows", "Notifications", "AutoUpdate", "OpenMatchOnEnd", "CustomGames",
 };
 
 int readInt(const QJsonObject &o, const char *key, int fallback)
@@ -94,6 +94,7 @@ Settings Settings::fromJson(const QJsonObject &o)
     s.startWithWindows = readBool(o, "StartWithWindows", s.startWithWindows);
     s.notifications = readBool(o, "Notifications", s.notifications);
     s.autoUpdate = readBool(o, "AutoUpdate", s.autoUpdate);
+    s.openMatchOnEnd = readBool(o, "OpenMatchOnEnd", s.openMatchOnEnd);
     s.customGames = readString(o, "CustomGames", s.customGames);
     s.extra = o;
     for (const char *key : KnownKeys)
@@ -127,6 +128,7 @@ QJsonObject Settings::toJson() const
     o.insert(QStringLiteral("StartWithWindows"), startWithWindows);
     o.insert(QStringLiteral("Notifications"), notifications);
     o.insert(QStringLiteral("AutoUpdate"), autoUpdate);
+    o.insert(QStringLiteral("OpenMatchOnEnd"), openMatchOnEnd);
     o.insert(QStringLiteral("CustomGames"), customGames);
     return o;
 }

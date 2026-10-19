@@ -1,9 +1,12 @@
 #include "EventSources.h"
 #include "core/Log.h"
+#include "core/MediaCache.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QNetworkAccessManager>
@@ -13,11 +16,43 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 
+#include <cmath>
+
 namespace aeonis {
 
 // ---------------------------------------------------------------- League of Legends
 
-LeagueEvents::LeagueEvents(Options options, QObject *parent) : EventSource(std::move(options), parent)
+namespace {
+
+QString championIdFromRaw(const QString &raw)
+{
+    // "game_character_displayname_MonkeyKing" -> "MonkeyKing" (id do Data Dragon).
+    const int i = raw.lastIndexOf(QLatin1Char('_'));
+    return i >= 0 ? raw.mid(i + 1) : raw;
+}
+
+bool sameName(const QString &a, const QString &me)
+{
+    const QString meShort = me.section(QLatin1Char('#'), 0, 0);
+    return !a.isEmpty() && !me.isEmpty()
+        && (a.compare(me, Qt::CaseInsensitive) == 0 || a.compare(meShort, Qt::CaseInsensitive) == 0
+            || a.section(QLatin1Char('#'), 0, 0).compare(meShort, Qt::CaseInsensitive) == 0);
+}
+
+QString playerName(const QJsonObject &p)
+{
+    for (const char *key : {"riotId", "summonerName", "riotIdGameName"}) {
+        const QString v = p.value(QLatin1String(key)).toString();
+        if (!v.isEmpty())
+            return v;
+    }
+    return {};
+}
+
+} // namespace
+
+LeagueEvents::LeagueEvents(Options options, const QString &exePath, QObject *parent)
+    : EventSource(std::move(options), parent), m_exe(exePath)
 {
     m_timer.setInterval(1000);
     connect(&m_timer, &QTimer::timeout, this, &LeagueEvents::poll);
@@ -34,42 +69,81 @@ void LeagueEvents::poll()
     if (m_busy)
         return;
     m_busy = true;
-    auto get = [this](const char *path) {
-        QNetworkRequest req(QUrl(QStringLiteral("https://127.0.0.1:2999/liveclientdata/") + QLatin1String(path)));
-        req.setTransferTimeout(2000);
-        QNetworkReply *reply = m_net->get(req);
-        // A API usa um certificado autoassinado da Riot; o endereço é fixo em loopback.
-        connect(reply, &QNetworkReply::sslErrors, reply, [reply](const QList<QSslError> &) { reply->ignoreSslErrors(); });
-        return reply;
-    };
-    if (m_me.isEmpty()) {
-        QNetworkReply *r = get("activeplayername");
-        connect(r, &QNetworkReply::finished, this, [this, r] {
-            r->deleteLater();
-            if (r->error() == QNetworkReply::NoError) {
-                const QByteArray body = r->readAll().trimmed();
-                const QJsonDocument doc = QJsonDocument::fromJson("[" + body + "]");
-                m_me = doc.array().at(0).toString();
-            }
-            m_busy = false;
-        });
-        return;
-    }
-    QNetworkReply *r = get("eventdata");
-    connect(r, &QNetworkReply::finished, this, [this, r] {
+    // /allgamedata (eventos + jogadores + relógio) até o relógio começar e a cada 5 s; no resto, só os eventos.
+    const bool all = m_me.isEmpty() || !m_clock || ++m_tick % 5 == 0;
+    QNetworkRequest req(QUrl(QStringLiteral("https://127.0.0.1:2999/liveclientdata/")
+                             + (all ? QStringLiteral("allgamedata") : QStringLiteral("eventdata"))));
+    req.setTransferTimeout(2000);
+    QNetworkReply *r = m_net->get(req);
+    // A API usa um certificado autoassinado da Riot; o endereço é fixo em loopback.
+    connect(r, &QNetworkReply::sslErrors, r, [r](const QList<QSslError> &) { r->ignoreSslErrors(); });
+    connect(r, &QNetworkReply::finished, this, [this, r, all] {
         r->deleteLater();
         m_busy = false;
         if (r->error() != QNetworkReply::NoError) {
             m_me.clear(); // tela de carregamento ou partida terminando
             return;
         }
-        handleEvents(r->readAll());
+        if (all)
+            handleAll(r->readAll());
+        else
+            handleEvents(QJsonDocument::fromJson(r->readAll()).object().value(QLatin1String("Events")).toArray());
     });
 }
 
-void LeagueEvents::handleEvents(const QByteArray &body)
+void LeagueEvents::handleAll(const QByteArray &body)
 {
-    const QJsonArray events = QJsonDocument::fromJson(body).object().value(QLatin1String("Events")).toArray();
+    const QJsonObject root = QJsonDocument::fromJson(body).object();
+    const QString me = playerName(root.value(QLatin1String("activePlayer")).toObject());
+    if (me.isEmpty())
+        return; // ainda carregando
+    m_me = me;
+    const double gameTime = root.value(QLatin1String("gameData")).toObject().value(QLatin1String("gameTime")).toDouble();
+    if (!m_clock && gameTime > 0.5) {
+        m_clock = true;
+        m_info.insert(QStringLiteral("gameStart"),
+                      QDateTime::currentDateTime().addMSecs(-qint64(gameTime * 1000)).toString(Qt::ISODateWithMs));
+        Log::info(QStringLiteral("LoL: relógio da partida em %1 s.").arg(gameTime, 0, 'f', 1));
+        emit clockStarted(gameTime);
+        fetchQueue();
+    }
+    const QJsonArray players = root.value(QLatin1String("allPlayers")).toArray();
+    m_team.clear();
+    m_allies.clear();
+    for (const QJsonValue &v : players)
+        if (sameName(playerName(v.toObject()), m_me))
+            m_team = v.toObject().value(QLatin1String("team")).toString();
+    for (const QJsonValue &v : players) {
+        const QJsonObject p = v.toObject();
+        if (m_team.isEmpty() || p.value(QLatin1String("team")).toString() != m_team)
+            continue;
+        for (const char *key : {"riotId", "summonerName", "riotIdGameName", "championName"})
+            if (!p.value(QLatin1String(key)).toString().isEmpty())
+                m_allies << p.value(QLatin1String(key)).toString();
+    }
+    const QJsonObject player = playerInfo(root, m_me);
+    for (auto it = player.begin(); it != player.end(); ++it)
+        m_info.insert(it.key(), it.value());
+    if (gameTime > 0)
+        m_info.insert(QStringLiteral("gameTime"), std::round(gameTime));
+    if (!m_iconRequested && !player.value(QLatin1String("championId")).toString().isEmpty()) {
+        m_iconRequested = true;
+        fetchChampionIcon(player.value(QLatin1String("championId")).toString());
+    }
+    handleEvents(root.value(QLatin1String("events")).toObject().value(QLatin1String("Events")).toArray());
+    publish();
+}
+
+void LeagueEvents::publish()
+{
+    if (m_info != m_published && m_info.contains(QLatin1String("champion"))) {
+        m_published = m_info;
+        emit matchInfo(m_info);
+    }
+}
+
+void LeagueEvents::handleEvents(const QJsonArray &events)
+{
     int maxId = -1;
     for (const QJsonValue &v : events)
         maxId = std::max(maxId, v.toObject().value(QLatin1String("EventID")).toInt());
@@ -84,19 +158,152 @@ void LeagueEvents::handleEvents(const QByteArray &body)
         if (id <= m_lastId)
             continue;
         m_lastId = id;
+        if (e.value(QLatin1String("EventName")).toString() == QLatin1String("GameEnd")) {
+            const QString result = e.value(QLatin1String("Result")).toString();
+            if (!result.isEmpty())
+                m_info.insert(QStringLiteral("result"), result);
+            publish();
+            continue;
+        }
         const QString hit = classify(e, m_me, opts);
+        const QString mark = timelineLabel(e, m_me, m_team, m_allies);
         if (!hit.isEmpty())
             emit highlight(hit);
+        else if (!mark.isEmpty())
+            emit marker(mark);
     }
+}
+
+void LeagueEvents::fetchQueue()
+{
+    // A fila (ranqueada, normal...) vem do cliente (LCU): ...\League of Legends\lockfile =
+    // "LeagueClient:pid:porta:senha:https". Sem ele, fica o modo da partida (gameMode).
+    QDir dir = QFileInfo(m_exe).absoluteDir();
+    QFile lock;
+    for (int up = 0; up < 3; ++up) {
+        lock.setFileName(dir.absoluteFilePath(QStringLiteral("lockfile")));
+        if (lock.open(QIODevice::ReadOnly) || !dir.cdUp())
+            break;
+    }
+    if (!lock.isOpen())
+        return;
+    const QList<QByteArray> parts = lock.readAll().trimmed().split(':');
+    if (parts.size() < 5)
+        return;
+    QNetworkRequest req(QUrl(QStringLiteral("https://127.0.0.1:%1/lol-gameflow/v1/session").arg(QString::fromLatin1(parts[2]))));
+    req.setRawHeader("Authorization", "Basic " + QByteArray("riot:" + parts[3]).toBase64());
+    req.setTransferTimeout(3000);
+    QNetworkReply *r = m_net->get(req);
+    connect(r, &QNetworkReply::sslErrors, r, [r](const QList<QSslError> &) { r->ignoreSslErrors(); });
+    connect(r, &QNetworkReply::finished, this, [this, r] {
+        r->deleteLater();
+        const QJsonObject queue = QJsonDocument::fromJson(r->readAll()).object()
+                                      .value(QLatin1String("gameData")).toObject().value(QLatin1String("queue")).toObject();
+        QString name = queueName(queue.value(QLatin1String("id")).toInt(-1));
+        if (name.isEmpty())
+            name = queue.value(QLatin1String("description")).toString();
+        if (!name.isEmpty()) {
+            m_info.insert(QStringLiteral("queue"), name);
+            publish();
+        }
+    });
+}
+
+void LeagueEvents::fetchChampionIcon(const QString &championId)
+{
+    const QString path = MediaCache::championIconPath(championId);
+    if (QFileInfo::exists(path))
+        return;
+    // Ícone do campeão no Data Dragon (CDN oficial da Riot), na versão mais recente.
+    QNetworkRequest req(QUrl(QStringLiteral("https://ddragon.leagueoflegends.com/api/versions.json")));
+    req.setTransferTimeout(10000);
+    QNetworkReply *r = m_net->get(req);
+    connect(r, &QNetworkReply::finished, this, [this, r, championId, path] {
+        r->deleteLater();
+        const QString version = QJsonDocument::fromJson(r->readAll()).array().at(0).toString();
+        if (version.isEmpty())
+            return;
+        QNetworkRequest img(QUrl(QStringLiteral("https://ddragon.leagueoflegends.com/cdn/%1/img/champion/%2.png").arg(version, championId)));
+        img.setTransferTimeout(10000);
+        QNetworkReply *ri = m_net->get(img);
+        connect(ri, &QNetworkReply::finished, this, [ri, path] {
+            ri->deleteLater();
+            const QByteArray png = ri->readAll();
+            if (ri->error() != QNetworkReply::NoError || !png.startsWith("\x89PNG"))
+                return;
+            QFile f(path);
+            if (f.open(QIODevice::WriteOnly))
+                f.write(png);
+        });
+    });
+}
+
+QJsonObject LeagueEvents::playerInfo(const QJsonObject &root, const QString &me)
+{
+    QJsonObject info;
+    const QString mode = root.value(QLatin1String("gameData")).toObject().value(QLatin1String("gameMode")).toString();
+    if (!mode.isEmpty())
+        info.insert(QStringLiteral("mode"), modeName(mode));
+    for (const QJsonValue &v : root.value(QLatin1String("allPlayers")).toArray()) {
+        const QJsonObject p = v.toObject();
+        if (!sameName(playerName(p), me))
+            continue;
+        const QJsonObject scores = p.value(QLatin1String("scores")).toObject();
+        info.insert(QStringLiteral("champion"), p.value(QLatin1String("championName")).toString());
+        info.insert(QStringLiteral("championId"), championIdFromRaw(p.value(QLatin1String("rawChampionName")).toString()));
+        info.insert(QStringLiteral("kills"), scores.value(QLatin1String("kills")).toInt());
+        info.insert(QStringLiteral("deaths"), scores.value(QLatin1String("deaths")).toInt());
+        info.insert(QStringLiteral("assists"), scores.value(QLatin1String("assists")).toInt());
+        info.insert(QStringLiteral("cs"), scores.value(QLatin1String("creepScore")).toInt());
+        info.insert(QStringLiteral("level"), p.value(QLatin1String("level")).toInt());
+        break;
+    }
+    return info;
+}
+
+QString LeagueEvents::queueName(int id)
+{
+    switch (id) {
+    case 0: return QStringLiteral("Personalizada");
+    case 400: return QStringLiteral("Normal (Escolha Alternada)");
+    case 420: return QStringLiteral("Ranqueada Solo/Duo");
+    case 430: return QStringLiteral("Normal (Às Cegas)");
+    case 440: return QStringLiteral("Ranqueada Flexível");
+    case 450: return QStringLiteral("ARAM");
+    case 480: case 490: return QStringLiteral("Partida Rápida");
+    case 700: return QStringLiteral("Clash");
+    case 720: return QStringLiteral("ARAM Clash");
+    case 830: case 840: case 850: case 870: case 880: case 890: return QStringLiteral("Contra IA");
+    case 900: case 1010: return QStringLiteral("ARURF");
+    case 1020: return QStringLiteral("Um Por Todos");
+    case 1300: return QStringLiteral("Nexus Blitz");
+    case 1400: return QStringLiteral("Livro de Feitiços Supremo");
+    case 1700: case 1710: return QStringLiteral("Arena");
+    case 1900: return QStringLiteral("URF");
+    default: return {};
+    }
+}
+
+QString LeagueEvents::modeName(const QString &mode)
+{
+    static const QHash<QString, QString> names = {
+        {QStringLiteral("CLASSIC"), QStringLiteral("Summoner's Rift")},
+        {QStringLiteral("ARAM"), QStringLiteral("ARAM")},
+        {QStringLiteral("CHERRY"), QStringLiteral("Arena")},
+        {QStringLiteral("URF"), QStringLiteral("URF")},
+        {QStringLiteral("ONEFORALL"), QStringLiteral("Um Por Todos")},
+        {QStringLiteral("NEXUSBLITZ"), QStringLiteral("Nexus Blitz")},
+        {QStringLiteral("ULTBOOK"), QStringLiteral("Livro de Feitiços Supremo")},
+        {QStringLiteral("PRACTICETOOL"), QStringLiteral("Modo Treino")},
+        {QStringLiteral("TUTORIAL"), QStringLiteral("Tutorial")},
+        {QStringLiteral("SWIFTPLAY"), QStringLiteral("Partida Rápida")},
+    };
+    return names.value(mode.toUpper(), mode);
 }
 
 QString LeagueEvents::classify(const QJsonObject &e, const QString &me, const EventOptions &options)
 {
-    const QString meShort = me.section(QLatin1Char('#'), 0, 0);
-    auto isMe = [&](const QString &n) {
-        return !n.isEmpty() && !me.isEmpty()
-            && (n.compare(me, Qt::CaseInsensitive) == 0 || n.compare(meShort, Qt::CaseInsensitive) == 0);
-    };
+    auto isMe = [&](const QString &n) { return sameName(n, me); };
     auto str = [&](const char *key) { return e.value(QLatin1String(key)).toString(); };
     const QString name = str("EventName");
     if (name == QLatin1String("ChampionKill")) {
@@ -126,6 +333,41 @@ QString LeagueEvents::classify(const QJsonObject &e, const QString &me, const Ev
     };
     for (const auto &[event, label] : objectives)
         if (name == QLatin1String(event) && isMe(str("KillerName")))
+            return QString::fromUtf8(label);
+    return {};
+}
+
+QString LeagueEvents::timelineLabel(const QJsonObject &e, const QString &me, const QString &team, const QStringList &allies)
+{
+    auto str = [&](const char *key) { return e.value(QLatin1String(key)).toString(); };
+    auto isAlly = [&](const QString &n) {
+        if (sameName(n, me))
+            return true;
+        for (const QString &a : allies)
+            if (sameName(n, a))
+                return true;
+        return false;
+    };
+    const QString name = str("EventName");
+    if (name == QLatin1String("ChampionKill") || name == QLatin1String("Multikill") || name == QLatin1String("Ace"))
+        return classify(e, me, EventOptions{true, true});
+    // Torres e inibidores: "Turret_T2_..." / "Barracks_T2_..." são do time CHAOS (T1 = ORDER).
+    auto enemyStructure = [&](const QString &structure) {
+        const bool order = structure.contains(QLatin1String("_T1_")), chaos = structure.contains(QLatin1String("_T2_"));
+        if (team.isEmpty() || (!order && !chaos))
+            return isAlly(str("KillerName"));
+        return (order ? QStringLiteral("ORDER") : QStringLiteral("CHAOS")).compare(team, Qt::CaseInsensitive) != 0;
+    };
+    if (name == QLatin1String("TurretKilled"))
+        return enemyStructure(str("TurretKilled")) ? QStringLiteral("Torre") : QString();
+    if (name == QLatin1String("InhibKilled"))
+        return enemyStructure(str("InhibKilled")) ? QStringLiteral("Inibidor") : QString();
+    static const QList<QPair<const char *, const char *>> monsters = {
+        {"DragonKill", "Dragão"}, {"BaronKill", "Barão"}, {"HeraldKill", "Arauto"},
+        {"HordeKill", "Vastilarvas"}, {"AtakhanKill", "Atakhan"},
+    };
+    for (const auto &[event, label] : monsters)
+        if (name == QLatin1String(event) && isAlly(str("KillerName")))
             return QString::fromUtf8(label);
     return {};
 }

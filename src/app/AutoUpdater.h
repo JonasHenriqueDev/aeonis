@@ -68,6 +68,7 @@ private:
     qreal m_progress = -1;
     bool m_busy = false;
     bool m_notified = false;
+    int m_retries = 0; // falhas de rede seguidas (tenta de novo em 1, 5 e 15 min)
 };
 
 } // namespace aeonis

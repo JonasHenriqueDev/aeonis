@@ -4,6 +4,7 @@
 // linha do tempo. Nada é gravado na pasta de vídeos.
 
 #include <QDateTime>
+#include <QJsonObject>
 #include <QList>
 #include <QString>
 
@@ -12,7 +13,7 @@
 namespace aeonis {
 
 struct LibEntry {
-    QString t;     // session | end | clip | event
+    QString t;     // session | end | clip | event | info
     QString s;     // id da sessão
     QDateTime at;
     QString game;
@@ -22,6 +23,7 @@ struct LibEntry {
     QString label;
     std::optional<double> duration;
     QDateTime start; // instante do primeiro quadro do clipe (inválido se desconhecido)
+    QJsonObject info; // dados da partida (campeão, KDA, modo, resultado); o último "info" da sessão vale
 
     QByteArray toJsonLine() const;
     static std::optional<LibEntry> fromJsonLine(const QByteArray &line);
@@ -32,6 +34,7 @@ namespace Library {
 void sessionStarted(const QString &session, const QString &game, const QString &exe);
 void sessionEnded(const QString &session);
 void event(const QString &session, const QString &label);
+void matchInfo(const QString &session, const QJsonObject &info);
 /// `requestedAt`: momento em que o clipe foi pedido (fim do vídeo). `start`: início conhecido
 /// (gravação longa); senão é deduzido de requestedAt − duração.
 void clipSaved(const QString &session, const QString &path, const QString &kind, const QString &label,

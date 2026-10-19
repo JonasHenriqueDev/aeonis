@@ -91,6 +91,7 @@ QVariantList fields(const Settings &s)
         << field("HotkeyToggleRecording", "Atalhos", "Iniciar/parar gravação", "", "hotkey", s.hotkeyToggleRecording)
         << field("StartWithWindows", "Geral", "Iniciar com o Windows", "Abre só o ícone na bandeja ao entrar no Windows.", "bool", s.startWithWindows)
         << field("Notifications", "Geral", "Notificações", "Avisos do Windows ao detectar jogo, salvar clipe ou gravação. Falhas são sempre avisadas.", "bool", s.notifications)
+        << field("OpenMatchOnEnd", "Geral", "Abrir a partida ao terminar", "Quando o jogo fecha, abre o Aeonis direto na partida que acabou de ser gravada, para analisar.", "bool", s.openMatchOnEnd)
         << field("AutoUpdate", "Geral", "Atualizar automaticamente", "Ao abrir o Aeonis (e uma vez por dia), baixa e instala sozinho a versão nova do GitHub. Durante um jogo ou gravação, espera terminar. Desligado, só verifica quando você pedir em Sobre.", "bool", s.autoUpdate)
         << field("CustomGames", "Geral", "Jogos personalizados", "Um por linha: Nome=executavel.exe;outro.exe", "multiline", s.customGames);
     return out;
@@ -131,6 +132,7 @@ bool apply(Settings &s, const QVariantMap &values, QString *error)
         else if (k == QLatin1String("StartWithWindows")) u.startWithWindows = v.toBool();
         else if (k == QLatin1String("Notifications")) u.notifications = v.toBool();
         else if (k == QLatin1String("AutoUpdate")) u.autoUpdate = v.toBool();
+        else if (k == QLatin1String("OpenMatchOnEnd")) u.openMatchOnEnd = v.toBool();
         else if (k == QLatin1String("CustomGames")) u.customGames = v.toString();
     }
     if (u.hotkeySaveClip.compare(u.hotkeyToggleRecording, Qt::CaseInsensitive) == 0) {

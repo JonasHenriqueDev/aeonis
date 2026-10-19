@@ -57,6 +57,9 @@ public:
 
     ClipResult saveClip(int seconds, const QString &label);
     void beginRecording();
+    /// Adianta o início da gravação longa para `secondsAgo` atrás (ex.: o 0:00 do relógio do LoL,
+    /// descartando a tela de carregamento). Nunca recua.
+    void moveRecordingStart(double secondsAgo);
     ClipResult endRecording();
     /// Atualiza a janela do buffer (configurações mudaram durante a sessão).
     void updateSettings(const Settings &settings);

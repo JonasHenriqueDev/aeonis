@@ -407,6 +407,28 @@ void CaptureEngine::beginRecording()
     Log::info(QStringLiteral("Gravação longa iniciada a partir do segmento %1.").arg(*m_pinStart));
 }
 
+void CaptureEngine::moveRecordingStart(double secondsAgo)
+{
+    std::lock_guard lock(m_mutex);
+    if (!m_running || !m_pinStart)
+        return;
+    // O segmento que contém o instante pedido é o primeiro que terminou (última escrita) depois dele.
+    const QDateTime target = QDateTime::currentDateTime().addMSecs(-qint64(secondsAgo * 1000));
+    const auto segments = listSegments(m_dir);
+    for (size_t i = 0; i < segments.size(); ++i) {
+        const QDateTime end = QFileInfo(segments[i].path).lastModified();
+        if (end < target && i + 1 < segments.size())
+            continue;
+        if (segments[i].index <= *m_pinStart)
+            return;
+        m_pinStart = segments[i].index;
+        m_recordingSince = i > 0 ? QFileInfo(segments[i - 1].path).lastModified() : target;
+        writePin(m_dir, m_game, *m_pinStart, m_pinOutputDir);
+        Log::info(QStringLiteral("Gravação longa adiantada para o segmento %1 (%2 s atrás).").arg(*m_pinStart).arg(secondsAgo, 0, 'f', 1));
+        return;
+    }
+}
+
 ClipResult CaptureEngine::endRecording()
 {
     QString dir;

@@ -5,11 +5,15 @@ import QtMultimedia
 import "Format.js" as F
 
 // Player: vídeo (Qt Multimedia/FFmpeg: H.264 e HEVC sem codec da Store), linha do tempo com os
-// eventos da partida, recorte sem re-encode e os outros vídeos da mesma partida ao lado.
+// eventos da partida (ícones por tipo), recorte sem re-encode, os vídeos da mesma partida em cima
+// e a lista de eventos ao lado.
 FocusScope {
     id: p
     property var media
     readonly property var match: media ? win.matchOf(media) : null
+    readonly property var info: match && match.info ? match.info : ({})
+    readonly property bool hasInfo: info.champion !== undefined
+    readonly property var fullVideo: match ? match.clips.find(c => c.kind === "full") || null : null
     property var trim: null // { a, b } em segundos
     property bool trimming: false
     readonly property real duration: player.duration > 0 ? player.duration / 1000 : (media ? Math.max(0, win.durationOf(media)) : 0)
@@ -63,7 +67,13 @@ FocusScope {
         id: player
         videoOutput: video
         audioOutput: AudioOutput { id: audio; volume: volumeSlider.value; muted: muteButton.muted }
-        onMediaStatusChanged: if (mediaStatus === MediaPlayer.LoadedMedia) play()
+        onMediaStatusChanged: if (mediaStatus === MediaPlayer.LoadedMedia) {
+            if (win.pendingSeek >= 0) {
+                p.seek(win.pendingSeek)
+                win.pendingSeek = -1
+            }
+            play()
+        }
     }
 
     YouTubeDialog {
@@ -86,23 +96,60 @@ FocusScope {
             visible: !p.fullscreen
             spacing: 10
             AButton { text: "Voltar"; iconName: "back"; onClicked: win.current = null }
-            GameAvatar { game: p.media ? p.media.game : ""; iconUrl: p.media ? win.gameIcon(p.media.game) : ""; size: 36 }
+            Item {
+                implicitWidth: 38
+                implicitHeight: 38
+                Rectangle {
+                    anchors.fill: parent
+                    visible: p.hasInfo
+                    radius: 19
+                    color: Theme.card
+                    border.color: p.info.result === "Win" ? Theme.assist : p.info.result === "Lose" ? Theme.kill : Theme.line
+                    border.width: 2
+                    clip: true
+                    Image {
+                        anchors.fill: parent
+                        anchors.margins: 2
+                        source: p.info.championIcon || ""
+                        sourceSize: Qt.size(76, 76)
+                        fillMode: Image.PreserveAspectCrop
+                    }
+                }
+                GameAvatar { anchors.centerIn: parent; visible: !p.hasInfo; game: p.media ? p.media.game : ""; iconUrl: p.media ? win.gameIcon(p.media.game) : ""; size: 36 }
+            }
             ColumnLayout {
                 spacing: 1
                 Layout.fillWidth: true
                 Text {
                     Layout.fillWidth: true
                     elide: Text.ElideRight
-                    text: p.media ? F.chipText(p.media) + " · " + F.gameName(p.media.game) : ""
+                    text: !p.media ? ""
+                        : p.media.kind === "full" && p.hasInfo ? p.info.champion + " · " + F.kda(p.info)
+                        : F.chipText(p.media) + " · " + (p.hasInfo ? p.info.champion : F.gameName(p.media.game))
                     color: Theme.text
                     font.pixelSize: 16
                     font.weight: Font.DemiBold
                 }
                 Text {
-                    text: p.media ? F.dayLabel(p.media.created) + ", " + F.time(p.media.created) + " · " + F.size(p.media.size) : ""
+                    Layout.fillWidth: true
+                    elide: Text.ElideRight
+                    text: !p.media ? "" : [
+                        F.modeText(p.info), F.resultText(p.info),
+                        F.dayLabel(p.media.created) + ", " + F.time(p.media.created),
+                        p.media.matchTime >= 0 ? F.dur(p.media.matchTime) + " na partida" : "",
+                        F.size(p.media.size)
+                    ].filter(x => x).join(" · ")
                     color: Theme.muted
                     font.pixelSize: 12
                 }
+            }
+            AButton {
+                visible: !!p.media && p.media.kind !== "full" && p.media.matchTime >= 0 && p.fullVideo !== null
+                text: "Ver na partida"
+                iconName: "clock"
+                ToolTip.visible: hovered
+                ToolTip.text: "Abre a partida completa neste momento (" + (p.media ? F.dur(p.media.matchTime) : "") + ")"
+                onClicked: win.openAt(p.fullVideo, Math.max(0, p.media.matchTime))
             }
             AButton {
                 text: p.media && p.media.saved ? "Salvo" : "Salvar"
@@ -124,9 +171,98 @@ FocusScope {
                 ToolTip.text: "Compartilhar este vídeo no YouTube"
                 onClicked: youtubeDialog.openFor(p.media)
             }
-            AButton { text: "Mostrar na pasta"; iconName: "folder"; onClicked: App.reveal(p.media.path) }
-            AButton { text: "Abrir fora"; iconName: "external"; onClicked: App.openExternal(p.media.path) }
+            AButton {
+                iconName: "folder"
+                ToolTip.visible: hovered
+                ToolTip.text: "Mostrar na pasta"
+                onClicked: App.reveal(p.media.path)
+            }
+            AButton {
+                iconName: "external"
+                ToolTip.visible: hovered
+                ToolTip.text: "Abrir no player do Windows"
+                onClicked: App.openExternal(p.media.path)
+            }
             AButton { text: "Excluir"; iconName: "trash"; danger: true; onClicked: win.confirmDelete(p.media) }
+        }
+
+        // Vídeos desta partida (partida completa + clipes), como no Outplayed.
+        ListView {
+            id: strip
+            visible: !p.fullscreen && !!p.match && p.match.clips.length > 1
+            Layout.fillWidth: true
+            Layout.preferredHeight: 66
+            orientation: ListView.Horizontal
+            spacing: 8
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            model: p.match ? p.match.clips : []
+            FastWheel { horizontal: true }
+            delegate: AbstractButton {
+                id: mini
+                required property var modelData
+                readonly property bool on: !!p.media && modelData.id === p.media.id
+                width: 224
+                height: 66
+                hoverEnabled: true
+                onClicked: win.openClip(modelData)
+                background: Rectangle {
+                    radius: 10
+                    color: mini.on ? Theme.cardHi : mini.hovered ? Theme.card : Theme.panel
+                    border.color: mini.on ? Theme.accent : Theme.line
+                }
+                contentItem: RowLayout {
+                    spacing: 8
+                    Rectangle {
+                        Layout.leftMargin: 6
+                        Layout.preferredWidth: 96
+                        Layout.preferredHeight: 54
+                        radius: 6
+                        color: Theme.card
+                        clip: true
+                        Image {
+                            anchors.fill: parent
+                            source: win.thumbOf(mini.modelData)
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                            sourceSize.width: 200
+                        }
+                        Rectangle {
+                            anchors { right: parent.right; bottom: parent.bottom; margins: 4 }
+                            radius: 4; height: 15; width: miniDur.implicitWidth + 8
+                            color: "#cc000000"
+                            Text { id: miniDur; anchors.centerIn: parent; text: F.dur(win.durationOf(mini.modelData)); color: "white"; font.pixelSize: 10 }
+                        }
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Layout.rightMargin: 8
+                        spacing: 3
+                        RowLayout {
+                            spacing: 5
+                            EventBadge {
+                                label: mini.modelData.label
+                                icon: F.clipIcon(mini.modelData)
+                                color: Theme.kindColor(F.kindOf(mini.modelData))
+                                size: 18
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                elide: Text.ElideRight
+                                text: F.chipText(mini.modelData)
+                                color: Theme.text
+                                font.pixelSize: 12
+                                font.weight: Font.DemiBold
+                            }
+                        }
+                        Text {
+                            text: mini.modelData.matchTime >= 0 ? F.dur(mini.modelData.matchTime) + " na partida" : F.time(mini.modelData.created)
+                            color: Theme.muted
+                            font.pixelSize: 11
+                        }
+                    }
+                }
+            }
         }
 
         RowLayout {
@@ -205,7 +341,7 @@ FocusScope {
                         Layout.fillWidth: true
                         Layout.leftMargin: p.fullscreen ? 16 : 0
                         Layout.rightMargin: p.fullscreen ? 16 : 0
-                        Layout.preferredHeight: 26
+                        Layout.preferredHeight: 30
                         Rectangle {
                             id: track
                             anchors.verticalCenter: parent.verticalCenter
@@ -242,14 +378,15 @@ FocusScope {
                         }
                         Repeater {
                             model: p.media && p.duration > 0 ? p.media.markers : []
-                            delegate: Rectangle {
+                            delegate: EventBadge {
                                 required property var modelData
-                                x: modelData.t / p.duration * timeline.width - 6
+                                label: modelData.label
+                                size: markArea.containsMouse ? 24 : 20
+                                x: modelData.t / p.duration * timeline.width - size / 2
                                 anchors.verticalCenter: parent.verticalCenter
-                                width: 12; height: 12; radius: 6
-                                color: Theme.kindColor(F.labelKind(modelData.label))
-                                border.color: "white"
+                                border.color: Theme.bg
                                 border.width: 1.5
+                                z: markArea.containsMouse ? 2 : 1
                                 ToolTip.visible: markArea.containsMouse
                                 ToolTip.text: modelData.label + " · " + F.dur(modelData.t)
                                 MouseArea {
@@ -341,37 +478,56 @@ FocusScope {
                     anchors.margins: 12
                     spacing: 10
                     Text {
-                        text: p.match ? "Desta partida · " + F.time(p.match.start) : ""
+                        text: "Eventos" + (p.media && p.media.markers.length ? " · " + p.media.markers.length : "")
                         color: Theme.muted
                         font.pixelSize: 12
                         font.weight: Font.DemiBold
                     }
+                    Text {
+                        visible: !p.media || p.media.markers.length === 0
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        text: "Nenhum evento marcado neste vídeo."
+                        color: Theme.faint
+                        font.pixelSize: 12
+                    }
                     ListView {
+                        id: eventList
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
-                        spacing: 10
-                        model: p.match ? p.match.clips : []
+                        spacing: 2
+                        boundsBehavior: Flickable.StopAtBounds
+                        model: p.media ? p.media.markers : []
                         ScrollBar.vertical: ScrollBar {}
-                        delegate: Rectangle {
-                            id: mini
+                        FastWheel {}
+                        delegate: AbstractButton {
+                            id: evRow
                             required property var modelData
+                            readonly property bool now: p.position >= modelData.t - 3 && p.position < modelData.t + 4
                             width: ListView.view.width
-                            height: miniTile.implicitHeight + 34
-                            radius: 10
-                            color: p.media && modelData.id === p.media.id ? Theme.cardHi : "transparent"
-                            border.color: p.media && modelData.id === p.media.id ? Theme.accent : "transparent"
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.margins: 6
-                                spacing: 4
-                                ClipTile { id: miniTile; item: mini.modelData; compact: true; Layout.fillWidth: true }
+                            height: 38
+                            hoverEnabled: true
+                            onClicked: { p.seek(Math.max(0, modelData.t - 3)); player.play() }
+                            background: Rectangle {
+                                radius: 8
+                                color: evRow.now ? Theme.cardHi : evRow.hovered ? Theme.card : "transparent"
+                            }
+                            contentItem: RowLayout {
+                                spacing: 10
+                                EventBadge { Layout.leftMargin: 6; label: evRow.modelData.label; size: 24 }
                                 Text {
-                                    text: F.chipText(mini.modelData) + " · " + F.time(mini.modelData.created) + " · " + F.size(mini.modelData.size)
-                                    color: Theme.muted
-                                    font.pixelSize: 11
-                                    elide: Text.ElideRight
                                     Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                    text: evRow.modelData.label
+                                    color: Theme.text
+                                    font.pixelSize: 13
+                                }
+                                Text {
+                                    Layout.rightMargin: 8
+                                    text: F.dur(evRow.modelData.t + (p.media.kind !== "full" && p.media.matchTime >= 0 ? p.media.matchTime : 0))
+                                    color: Theme.muted
+                                    font.pixelSize: 12
                                 }
                             }
                         }

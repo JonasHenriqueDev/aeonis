@@ -44,6 +44,7 @@ struct Settings {
     bool startWithWindows = false;
     bool notifications = false; // balões do Windows (falhas aparecem sempre)
     bool autoUpdate = true;
+    bool openMatchOnEnd = true; // abre a janela na partida quando o jogo fecha
     QString customGames;
 
     QJsonObject extra; // chaves que esta versão não conhece

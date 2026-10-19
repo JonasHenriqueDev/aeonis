@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import "Format.js" as F
 
-// Barra lateral: marca, abas, jogos (com contagem) e o status da captura.
+// Barra lateral: abas, jogos (com contagem) e o status da captura. A marca fica na barra de título.
 Rectangle {
     color: Theme.side
     Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: Theme.line }
@@ -48,25 +48,8 @@ Rectangle {
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 12
-        anchors.topMargin: 18
+        anchors.topMargin: 14
         spacing: 4
-
-        RowLayout {
-            Layout.leftMargin: 8
-            Layout.bottomMargin: 16
-            spacing: 12
-            Image {
-                source: "qrc:/icons/aeonis-64.png"
-                sourceSize: Qt.size(76, 76)
-                Layout.preferredWidth: 38
-                Layout.preferredHeight: 38
-            }
-            ColumnLayout {
-                spacing: 0
-                Text { text: "Aeonis"; color: Theme.text; font.pixelSize: 17; font.bold: true }
-                Text { text: "gravador de gameplay"; color: Theme.faint; font.pixelSize: 12 }
-            }
-        }
 
         NavButton { text: "Partidas"; iconName: "trophy"; on: win.view === "matches" && !win.current; onClicked: win.go("matches") }
         NavButton { text: "Clipes"; iconName: "film"; on: win.view === "clips" && !win.current; onClicked: win.go("clips") }
@@ -88,12 +71,13 @@ Rectangle {
             spacing: 2
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar {}
+            FastWheel {}
             header: NavButton {
                 width: ListView.view.width
                 text: "Todos os jogos"
                 iconName: "grid"
                 on: win.gameFilter === ""
-                count: (win.lib.games || []).reduce((n, g) => n + g.clips, 0)
+                count: (win.lib.matches || []).length
                 onClicked: { win.gameFilter = ""; if (win.view === "settings" || win.view === "about") win.view = "matches"; win.current = null }
             }
             model: win.lib.games || []
@@ -103,7 +87,7 @@ Rectangle {
                 text: F.gameName(modelData.name)
                 game: modelData.name
                 gameIconUrl: modelData.icon
-                count: modelData.clips
+                count: (win.lib.matches || []).filter(m => m.game === modelData.name).length
                 on: win.gameFilter === modelData.name
                 onClicked: { win.gameFilter = modelData.name; if (win.view === "settings" || win.view === "about") win.view = "matches"; win.current = null }
             }

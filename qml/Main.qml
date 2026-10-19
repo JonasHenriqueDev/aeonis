@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import "Format.js" as F
 
 // Janela principal: barra lateral (abas, jogos, status) + partidas / clipes / configurações,
 // com o player por cima. Criada ao abrir e destruída ao fechar (WindowHost).
@@ -19,6 +20,8 @@ ApplicationWindow {
     property string view: ["settings", "about", "clips"].includes(InitialPage) ? InitialPage : "matches"
     property string gameFilter: ""
     property var current: null        // clipe aberto no player
+    property string pendingMatch: ""  // partida a abrir assim que a biblioteca carregar ("match:<id>")
+    property real pendingSeek: -1     // posição inicial (s) do próximo vídeo aberto no player
     property var thumbs: ({})         // id -> { url, duration } gerados depois da varredura
     property int thumbTick: 0
     property bool openedPlayer: false
@@ -48,11 +51,29 @@ ApplicationWindow {
 
     function go(v) {
         if (v === "player") { debugPlayer = true; openDebugPlayer(); return }
+        if (v.startsWith("match:")) {
+            view = "matches"
+            gameFilter = ""
+            pendingMatch = v.slice(6)
+            openPendingMatch()
+            return
+        }
         if (v === "library") v = "matches"
         current = null
         view = v
     }
     function openClip(c) { current = c }
+    function openMatch(m) { const c = F.matchMain(m); if (c) current = c }
+    // Abre `c` (ex.: a partida completa) já na posição `t` segundos.
+    function openAt(c, t) { pendingSeek = t; current = c }
+    function openPendingMatch() {
+        if (!pendingMatch) return false
+        const m = (App.library.matches || []).find(x => x.id === pendingMatch)
+        if (!m) return false
+        pendingMatch = ""
+        openMatch(m)
+        return true
+    }
     function thumbOf(c) { thumbTick; const t = thumbs[c.id]; return t && t.url ? t.url : c.thumb }
     function durationOf(c) { thumbTick; const t = thumbs[c.id]; return c.duration >= 0 ? c.duration : (t ? t.duration : -1) }
     function gameIcon(name) {
@@ -81,7 +102,7 @@ ApplicationWindow {
             win.thumbTick++
         }
         function onLibraryChanged() {
-            if (win.openDebugPlayer())
+            if (win.openDebugPlayer() || win.openPendingMatch())
                 return
             if (win.current) {
                 const c = win.findClip(win.current.id)
@@ -176,7 +197,10 @@ ApplicationWindow {
         current = all[0].clips[0]
         return true
     }
-    Component.onCompleted: openDebugPlayer()
+    Component.onCompleted: {
+        if (InitialPage.startsWith("match:")) go(InitialPage)
+        else openDebugPlayer()
+    }
     function toastsShow(text, kind) { toasts.show(text, kind) }
     function confirmDelete(c) {
         deleteDialog.target = c

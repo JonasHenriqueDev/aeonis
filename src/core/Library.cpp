@@ -50,6 +50,8 @@ QByteArray LibEntry::toJsonLine() const
         o.insert(QStringLiteral("Duration"), *duration);
     if (start.isValid())
         o.insert(QStringLiteral("Start"), Library::formatDate(start));
+    if (!info.isEmpty())
+        o.insert(QStringLiteral("Info"), info);
     return QJsonDocument(o).toJson(QJsonDocument::Compact);
 }
 
@@ -72,6 +74,7 @@ std::optional<LibEntry> LibEntry::fromJsonLine(const QByteArray &line)
         e.duration = o.value(QLatin1String("Duration")).toDouble();
     if (o.value(QLatin1String("Start")).isString())
         e.start = Library::parseDate(o.value(QLatin1String("Start")).toString());
+    e.info = o.value(QLatin1String("Info")).toObject();
     if (e.t.isEmpty())
         return std::nullopt;
     return e;
@@ -135,6 +138,16 @@ void event(const QString &session, const QString &label)
     e.s = session;
     e.at = QDateTime::currentDateTime();
     e.label = label;
+    append(e);
+}
+
+void matchInfo(const QString &session, const QJsonObject &info)
+{
+    LibEntry e;
+    e.t = QStringLiteral("info");
+    e.s = session;
+    e.at = QDateTime::currentDateTime();
+    e.info = info;
     append(e);
 }
 

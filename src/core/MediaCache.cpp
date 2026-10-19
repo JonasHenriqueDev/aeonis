@@ -68,6 +68,11 @@ QString gameIconPath(const QString &game)
     return QDir::toNativeSeparators(Paths::icons() + QLatin1Char('/') + Clips::sanitize(game) + QStringLiteral(".png"));
 }
 
+QString championIconPath(const QString &championId)
+{
+    return QDir::toNativeSeparators(Paths::icons() + QStringLiteral("/lol-") + Clips::sanitize(championId) + QStringLiteral(".png"));
+}
+
 void saveGameIcon(const QString &game, const QString &exe)
 {
     if (exe.isEmpty() || !QFileInfo::exists(exe))

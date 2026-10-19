@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import "Format.js" as F
 
-// Miniatura de um vídeo: selo do tipo/evento, duração, ★ salvo e hora.
+// Miniatura de um vídeo: selo do tipo/evento (com ícone), duração, ★ salvo, hora e o momento na partida.
 AbstractButton {
     id: tile
     property var item
@@ -43,13 +43,18 @@ AbstractButton {
                 height: 22
                 width: chip.implicitWidth + 14
                 color: Theme.kindColor(F.kindOf(tile.item))
-                Text {
+                Row {
                     id: chip
                     anchors.centerIn: parent
-                    text: F.chipText(tile.item)
-                    color: "white"
-                    font.pixelSize: 11
-                    font.weight: Font.DemiBold
+                    spacing: 5
+                    Icon { name: F.clipIcon(tile.item); size: 13; color: "white"; anchors.verticalCenter: parent.verticalCenter }
+                    Text {
+                        text: F.chipText(tile.item)
+                        color: "white"
+                        font.pixelSize: 11
+                        font.weight: Font.DemiBold
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
                 }
             }
             Icon {
@@ -91,12 +96,23 @@ AbstractButton {
             Text {
                 Layout.fillWidth: true
                 elide: Text.ElideRight
-                text: (tile.showGame ? F.gameName(tile.item.game) + " · " : "") + F.time(tile.item.created)
+                text: (tile.showGame && (win.lib.games || []).length > 1 ? F.gameName(tile.item.game) + " · " : "") + F.time(tile.item.created)
                 color: Theme.text
                 font.pixelSize: 13
                 font.weight: Font.DemiBold
             }
-            Text { text: F.size(tile.item.size); color: Theme.faint; font.pixelSize: 12 }
+            Row {
+                visible: tile.item.matchTime >= 0
+                spacing: 4
+                Icon { name: "clock"; size: 13; color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
+                Text {
+                    text: F.dur(tile.item.matchTime) + " na partida"
+                    color: Theme.muted
+                    font.pixelSize: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+            Text { visible: tile.item.matchTime < 0; text: F.size(tile.item.size); color: Theme.faint; font.pixelSize: 12 }
         }
     }
 }

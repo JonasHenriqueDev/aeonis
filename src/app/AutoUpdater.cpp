@@ -109,9 +109,18 @@ void AutoUpdater::check()
     connect(m_reply, &QNetworkReply::finished, this, [this, reply = m_reply.data()] {
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) {
-            setStatus(QStringLiteral("Não foi possível verificar atualizações (%1).").arg(reply->errorString()), false);
+            Log::warn(QStringLiteral("Verificação de atualizações: %1").arg(reply->errorString()));
+            // Sem rede (ex.: logo depois de ligar o PC): tenta de novo sozinho em alguns minutos.
+            static const int retryMinutes[] = {1, 5, 15};
+            const bool offline = reply->error() < QNetworkReply::ContentAccessDenied; // erros de conexão/DNS/tempo
+            if (offline && m_timer.isActive() && m_retries < 3)
+                m_timer.setInterval(retryMinutes[m_retries++] * 60 * 1000);
+            setStatus(offline ? QStringLiteral("Sem conexão com o GitHub agora. O Aeonis tenta de novo sozinho.")
+                              : QStringLiteral("Não foi possível verificar atualizações (%1).").arg(reply->errorString()),
+                      false);
             return;
         }
+        m_retries = 0;
         const QJsonObject release = QJsonDocument::fromJson(reply->readAll()).object();
         const QString tag = release.value(QLatin1String("tag_name")).toString();
         static const QRegularExpression setup(QStringLiteral(R"(^Aeonis-Setup-[\w.\-]+\.exe$)"), QRegularExpression::CaseInsensitiveOption);

@@ -48,10 +48,65 @@ function plural(n, one, many) { return n + " " + (n === 1 ? one : many) }
 function labelKind(l) {
     if (/kill|ace|abates/i.test(l)) return "multi"
     if (/abate/i.test(l)) return "kill"
-    if (/drag|bar[ãa]o|arauto|torre|inibidor/i.test(l)) return "obj"
+    if (/drag|bar[ãa]o|arauto|torre|inibidor|vastilarva|atakhan/i.test(l)) return "obj"
     if (/morte/i.test(l)) return "death"
     if (/assist/i.test(l)) return "assist"
     return "manual"
+}
+
+// Ícone de cada tipo de evento/destaque (Icon.qml), no estilo dos marcadores do Outplayed.
+function eventIcon(l) {
+    l = l || ""
+    if (/^partida|grava[çc][ãa]o|recuperado/i.test(l)) return "play"
+    if (/ace/i.test(l) && !/abate/i.test(l)) return "crown"
+    if (/kill|abates/i.test(l)) return "swords"
+    if (/abate/i.test(l)) return "sword"
+    if (/morte/i.test(l)) return "skull"
+    if (/assist/i.test(l)) return "assist"
+    if (/torre/i.test(l)) return "tower"
+    if (/inibidor/i.test(l)) return "inhib"
+    if (/drag/i.test(l)) return "dragon"
+    if (/bar[ãa]o|atakhan/i.test(l)) return "baron"
+    if (/arauto/i.test(l)) return "herald"
+    if (/vastilarva/i.test(l)) return "grubs"
+    return "film"
+}
+
+function clipIcon(c) { return c.kind === "full" ? "play" : c.kind === "manual" ? "film" : eventIcon(c.label) }
+
+// Resumo dos eventos de uma partida: [{ icon, label, kind, count }] na ordem de importância.
+function eventSummary(events) {
+    const order = ["crown", "swords", "sword", "assist", "skull", "baron", "dragon", "herald", "grubs", "inhib", "tower"]
+    const map = {}
+    for (const e of (events || [])) {
+        const icon = eventIcon(e.label)
+        if (!map[icon]) map[icon] = { icon: icon, label: e.label, kind: labelKind(e.label), count: 0 }
+        map[icon].count++
+    }
+    return order.filter(i => map[i]).map(i => map[i])
+}
+
+function kda(info) {
+    if (!info || info.kills === undefined) return ""
+    return info.kills + " / " + info.deaths + " / " + info.assists
+}
+
+function kdaRatio(info) {
+    if (!info || info.kills === undefined) return ""
+    if (!info.deaths) return "KDA perfeito"
+    return ((info.kills + info.assists) / info.deaths).toFixed(2) + " KDA"
+}
+
+function resultText(info) {
+    if (!info || !info.result) return ""
+    return info.result === "Win" ? "Vitória" : info.result === "Lose" ? "Derrota" : info.result
+}
+
+function modeText(info) { return info ? (info.queue || info.mode || "") : "" }
+
+function matchMain(m) {
+    if (!m || !m.clips.length) return null
+    return m.clips.find(c => c.kind === "full") || m.clips[0]
 }
 
 function kindOf(c) {

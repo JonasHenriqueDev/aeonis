@@ -62,7 +62,8 @@ signals:
     void toast(const QString &text, const QString &kind);
 
 private:
-    using Done = std::function<void()>;
+    /// Recebe se uma gravação longa foi salva.
+    using Done = std::function<void(bool savedRecording)>;
 
     /// Enfileira `work` (na fila da captura) e roda `done` na UI com o resultado.
     template <typename Work, typename Then>
@@ -97,6 +98,7 @@ private:
     UpdateSplash *m_splash = nullptr;
     bool m_windowBeforeUpdate = false; // reabre a janela se a atualização falhar
     std::optional<GameDef> m_activeGame;
+    QString m_lastClipSession; // sessão do último clipe salvo (abre a partida ao terminar)
     bool m_starting = false;
     bool m_exiting = false;
 };

@@ -70,8 +70,12 @@ Um processo só, C++20 + Qt 6 + FFmpeg (libav* linkado estaticamente via vcpkg).
 - **YouTube** (`share/YouTube`): login OAuth no navegador (loopback 127.0.0.1 + PKCE), token no Gerenciador de
   Credenciais do Windows, upload resumable em partes de 8 MB; links enviados em `youtube.json`. Diálogo em `qml/YouTubeDialog`.
 - **Histórico** (`core/Library`): `%LOCALAPPDATA%\Aeonis\library.jsonl`, append-only, no formato da antiga
-  versão C# (sessões, clipes, eventos). `ui/LibraryModel` varre a pasta de vídeos e cruza com esse histórico
-  para montar partidas, jogos e marcadores.
+  versão C# (sessões, clipes, eventos) mais `info` (campeão, KDA, fila, resultado e o 0:00 do relógio do LoL;
+  o último da sessão vale). `ui/LibraryModel` varre a pasta de vídeos e cruza com esse histórico para montar
+  partidas, jogos, marcadores e o tempo de cada clipe na partida.
+- **LoL** (`games/EventSources`): a gravação longa começa com o processo e é adiantada para o 0:00 do relógio
+  (`CaptureEngine::moveRecordingStart`) quando a Live Client Data API mostra o `gameTime`; a fila vem do
+  lockfile do cliente (LCU) e o ícone do campeão do Data Dragon (cache em `icons\lol-*.png`).
 - **Configurações**: `core/Settings` lê/grava `settings.json` com chaves PascalCase e enums como texto,
   compatível com a versão C#; chaves desconhecidas são preservadas em `extra`. Para adicionar uma opção:
   campo em `Settings.h`, `KnownKeys`/`fromJson`/`toJson`/`normalize` em `Settings.cpp`, e `fields()`/`apply()`
