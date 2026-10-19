@@ -183,7 +183,7 @@ void App::startDesktopBufferIfWanted()
 
 void App::installUpdateIfIdle()
 {
-    // Como no Outplayed: atualiza sozinho ao abrir, mas nunca no meio de uma partida ou gravação;
+    // Atualiza sozinho ao abrir, mas nunca no meio de uma partida ou gravação;
     // nesse caso tenta de novo quando o jogo fechar ou a gravação terminar.
     if (!m_settings.autoUpdate || m_exiting || !m_updater->available() || m_updater->busy()
         || m_activeGame || m_engine.recording())

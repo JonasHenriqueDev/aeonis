@@ -128,7 +128,7 @@ Item {
                     color: Theme.muted
                     font.pixelSize: 13
                     text: "Software livre sob a licença GPL-3.0-or-later: use, estude, modifique e redistribua à vontade. "
-                          + "Feito com Qt 6 e FFmpeg. Não é afiliado ao Outplayed nem à Overwolf."
+                          + "Feito com Qt 6 e FFmpeg."
                 }
                 Flow {
                     Layout.fillWidth: true
