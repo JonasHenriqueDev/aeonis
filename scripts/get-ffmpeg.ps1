@@ -1,7 +1,7 @@
-# Baixa o FFmpeg (build "release essentials" de gyan.dev, que inclui ddagrab, NVENC, AMF e QSV)
+# Baixa o FFmpeg 8.1 (build GPL de BtbN, com ddagrab, NVENC, AMF, QSV e x264 — o mesmo da release)
 # para %LOCALAPPDATA%\Aeonis\ffmpeg, onde o Aeonis procura automaticamente.
 param(
-    [string]$Url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+    [string]$Url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-gpl-8.1.zip",
     [string]$Destination = (Join-Path $env:LOCALAPPDATA "Aeonis\ffmpeg")
 )
 $ErrorActionPreference = "Stop"

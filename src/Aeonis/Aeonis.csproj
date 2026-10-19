@@ -12,6 +12,7 @@
     <Description>Gravador de gameplay open-source, leve e sem anúncios.</Description>
     <Version>0.1.0</Version>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationIcon>..\..\assets\aeonis.ico</ApplicationIcon>
 
     <!-- Footprint mínimo: GC de estação sem thread concorrente, sem dados de cultura, sem satélites. -->
     <ServerGarbageCollection>false</ServerGarbageCollection>

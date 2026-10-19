@@ -4,3 +4,4 @@ dist/
 *.user
 .vs/
 ffmpeg.exe
+.mcp.json

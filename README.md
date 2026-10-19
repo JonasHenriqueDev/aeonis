@@ -12,6 +12,17 @@ Outplayed. Sem Overwolf, sem conta, sem nuvem, sem telemetria.
 - **Biblioteca** com miniaturas agrupadas por jogo, corte rápido sem re-encode e exclusão para a lixeira.
 - Áudio do sistema e microfone (WASAPI), limite de armazenamento, iniciar com o Windows.
 
+## Download
+Baixe **`Aeonis-Setup-x.y.z.exe`** em [Releases](https://github.com/JonasHenriqueDev/aeonis/releases/latest),
+instale e jogue. O instalador já traz tudo (runtime .NET e FFmpeg) e não pede administrador.
+Também existe uma versão `portable.zip`: é só extrair e abrir o `Aeonis.exe`.
+
+> Como o executável ainda não tem assinatura digital, o Windows SmartScreen pode avisar na primeira vez:
+> clique em **Mais informações → Executar assim mesmo**.
+
+Depois de instalado, o Aeonis fica no ícone da bandeja (perto do relógio). Abra um jogo e use **Alt+F10**
+para salvar os últimos 30 s ou **Alt+F9** para iniciar/parar uma gravação. Dê dois cliques no ícone para abrir a biblioteca.
+
 ## Por que é leve
 
 | | |
@@ -24,12 +35,10 @@ Outplayed. Sem Overwolf, sem conta, sem nuvem, sem telemetria.
 
 Medido numa RTX 2060, 1080p60 a 20 Mbps: FFmpeg ~4% de **um** núcleo de CPU (≈0,2% do total em 20 threads).
 
-## Requisitos
-- Windows 10/11 x64
-- [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) (ou publique *self-contained*)
-- FFmpeg 6.1+ com `ddagrab` — rode `scripts\get-ffmpeg.ps1`, ou coloque `ffmpeg.exe` ao lado do `Aeonis.exe`
+## Compilar a partir do código
+Requisitos: Windows 10/11 x64, .NET 8 SDK, FFmpeg 6.1+ com `ddagrab` (`scripts\get-ffmpeg.ps1`) e,
+para o instalador, Inno Setup 6.
 
-## Compilar e rodar
 ```bash
 dotnet build src/Aeonis -c Release
 ```
@@ -39,7 +48,11 @@ powershell -ExecutionPolicy Bypass -File scripts/get-ffmpeg.ps1
 ```bash
 powershell -ExecutionPolicy Bypass -File scripts/publish.ps1
 ```
-O executável fica em `dist\Aeonis.exe`. Teste de ponta a ponta sem UI:
+O executável fica em `dist\Aeonis.exe`. Para gerar o instalador e o zip portable da release:
+```bash
+powershell -ExecutionPolicy Bypass -File scripts/release.ps1
+```
+Teste de ponta a ponta sem UI:
 ```bash
 dist/Aeonis.exe --selftest --seconds 10
 ```
