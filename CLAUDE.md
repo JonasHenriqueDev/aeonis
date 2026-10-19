@@ -17,7 +17,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   apresentar com a versão do pacote (isso já causou um loop de atualização na 1.1.0).
 - **Releases precisam do cliente OAuth do YouTube**: defina `AEONIS_YOUTUBE_CLIENT_ID` e
   `AEONIS_YOUTUBE_CLIENT_SECRET` (variáveis de ambiente do usuário) antes do `package.ps1`; sem elas o envio
-  ao YouTube sai desativado. Nunca commite esses valores.
+  ao YouTube sai desativado. Nunca commite esses valores. Uma sessão aberta antes de elas existirem não as
+  herda: carregue do escopo do usuário no processo do build
+  (`foreach ($v in "AEONIS_YOUTUBE_CLIENT_ID","AEONIS_YOUTUBE_CLIENT_SECRET") { Set-Item "env:$v" ([Environment]::GetEnvironmentVariable($v,"User")) }`).
+- Outras sessões também lançam versões: antes de mudar a versão, faça `git fetch --tags` e use a próxima depois
+  da maior release/tag existente.
 
 ## Comandos
 
