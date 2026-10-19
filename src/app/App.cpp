@@ -70,13 +70,14 @@ App::App(bool minimized, QObject *parent) : QObject(parent), m_settings(Settings
     m_updater->setAutomatic(m_settings.autoUpdate);
     connect(m_updater, &AutoUpdater::updateFound, this, [this](const QString &version) {
         if (m_settings.autoUpdate) {
-            installUpdateIfIdle();
+            m_updater->prefetch(); // baixa em segundo plano; instala quando terminar (downloaded)
             return;
         }
         notify(QStringLiteral("Atualização disponível"),
                QStringLiteral("O Aeonis %1 está disponível. Abra Sobre para instalar.").arg(version));
     });
     connect(m_updater, &AutoUpdater::installerLaunched, this, &App::exit);
+    connect(m_updater, &AutoUpdater::downloaded, this, &App::installUpdateIfIdle);
     // Tela de atualização (logo + progresso) no lugar da janela enquanto baixa e instala.
     m_splash = new UpdateSplash(m_updater, this);
     connect(m_updater, &AutoUpdater::installStarted, this, [this] {
@@ -193,6 +194,10 @@ void App::installUpdateIfIdle()
     if (!m_settings.autoUpdate || m_exiting || !m_updater->available() || m_updater->busy()
         || m_activeGame || m_engine.recording())
         return;
+    if (!m_updater->ready()) { // ainda não baixado: baixa em segundo plano e volta aqui no fim
+        m_updater->prefetch();
+        return;
+    }
     if (m_updater->recentlyTried(m_updater->newVersion())) {
         Log::error(QStringLiteral("Atualização para %1 já foi tentada e o app continua na %2; não tenta de novo sozinho.")
                        .arg(m_updater->newVersion(), m_updater->version()));

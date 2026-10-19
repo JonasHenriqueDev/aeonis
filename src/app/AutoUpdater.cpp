@@ -4,6 +4,7 @@
 
 #include <QDateTime>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -130,6 +131,7 @@ void AutoUpdater::check()
             if (setup.match(asset.value(QLatin1String("name")).toString()).hasMatch()) {
                 url = asset.value(QLatin1String("browser_download_url")).toString();
                 name = asset.value(QLatin1String("name")).toString();
+                m_assetSize = asset.value(QLatin1String("size")).toInteger();
                 break;
             }
         }
@@ -149,10 +151,49 @@ void AutoUpdater::check()
     });
 }
 
-void AutoUpdater::downloadAndInstall(bool reopenWindow)
+QString AutoUpdater::installerPath() const
+{
+    return QDir::toNativeSeparators(QStandardPaths::writableLocation(QStandardPaths::TempLocation) + QLatin1Char('/') + m_assetName);
+}
+
+bool AutoUpdater::ready() const
+{
+    if (m_assetName.isEmpty())
+        return false;
+    QFile f(installerPath());
+    if (!f.open(QIODevice::ReadOnly) || f.size() < 1'000'000 || (m_assetSize > 0 && f.size() != m_assetSize))
+        return false;
+    return f.read(2) == "MZ";
+}
+
+void AutoUpdater::prefetch()
 {
     if (m_busy || m_assetUrl.isEmpty())
         return;
+    if (ready()) {
+        emit downloaded();
+        return;
+    }
+    download(false, false);
+}
+
+void AutoUpdater::downloadAndInstall(bool reopenWindow)
+{
+    if (m_assetUrl.isEmpty())
+        return;
+    if (ready()) {
+        emit installStarted();
+        launch(reopenWindow);
+        return;
+    }
+    if (m_busy)
+        return;
+    emit installStarted(); // pedido do usuário: mostra a tela de atualização já no download
+    download(true, reopenWindow);
+}
+
+void AutoUpdater::download(bool installAfter, bool reopenWindow)
+{
     const QUrl url(m_assetUrl);
     if (url.host() != QLatin1String("github.com") && !url.host().endsWith(QLatin1String(".github.com"))) {
         setStatus(QStringLiteral("Endereço de download inesperado."), false);
@@ -160,12 +201,22 @@ void AutoUpdater::downloadAndInstall(bool reopenWindow)
     }
     m_progress = 0;
     setStatus(QStringLiteral("Baixando a versão %1…").arg(m_newVersion), true);
-    emit installStarted();
+    Log::info(QStringLiteral("Atualização: baixando %1 (%2)").arg(m_assetName, installAfter ? QStringLiteral("para instalar") : QStringLiteral("em segundo plano")));
     QNetworkRequest req(url);
     req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("Aeonis/%1").arg(version()));
     req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     req.setTransferTimeout(120000);
+    // Grava direto no disco (.part) enquanto baixa; só vira o instalador quando completo.
+    auto *part = new QFile(installerPath() + QStringLiteral(".part"), this);
+    if (!part->open(QIODevice::WriteOnly)) {
+        delete part;
+        installAfter ? fail(QStringLiteral("Não foi possível salvar o instalador.")) : setStatus(QStringLiteral("Não foi possível salvar o instalador."), false);
+        return;
+    }
+    QElapsedTimer *clock = new QElapsedTimer;
+    clock->start();
     m_reply = m_net.get(req);
+    connect(m_reply, &QNetworkReply::readyRead, this, [part, reply = m_reply.data()] { part->write(reply->readAll()); });
     connect(m_reply, &QNetworkReply::downloadProgress, this, [this](qint64 got, qint64 total) {
         if (total > 0) {
             m_progress = qreal(got) / total;
@@ -173,40 +224,62 @@ void AutoUpdater::downloadAndInstall(bool reopenWindow)
             emit changed();
         }
     });
-    connect(m_reply, &QNetworkReply::finished, this, [this, reopenWindow, reply = m_reply.data()] {
+    connect(m_reply, &QNetworkReply::finished, this, [this, installAfter, reopenWindow, part, clock, reply = m_reply.data()] {
         reply->deleteLater();
-        if (reply->error() != QNetworkReply::NoError) {
-            fail(QStringLiteral("Falha no download (%1).").arg(reply->errorString()));
-            return;
-        }
-        const QByteArray data = reply->readAll();
-        if (data.size() < 1'000'000 || !data.startsWith("MZ")) {
-            fail(QStringLiteral("O instalador baixado é inválido."));
-            return;
-        }
-        const QString path = QDir::toNativeSeparators(QStandardPaths::writableLocation(QStandardPaths::TempLocation)
-                                                      + QLatin1Char('/') + m_assetName);
-        QFile f(path);
-        if (!f.open(QIODevice::WriteOnly) || f.write(data) != data.size()) {
-            fail(QStringLiteral("Não foi possível salvar o instalador."));
-            return;
-        }
-        f.close();
-        Log::info(QStringLiteral("Atualização: iniciando %1").arg(path));
-        QFile attempt(attemptFile());
-        if (attempt.open(QIODevice::WriteOnly))
-            attempt.write(QStringLiteral("%1|%2").arg(m_newVersion, QDateTime::currentDateTimeUtc().toString(Qt::ISODate)).toUtf8());
+        part->write(reply->readAll());
+        part->close();
+        const qint64 ms = clock->elapsed();
+        delete clock;
+        const QString partPath = part->fileName();
+        part->deleteLater();
+        auto failed = [&](const QString &why) {
+            QFile::remove(partPath);
+            Log::warn(QStringLiteral("Atualização: %1").arg(why));
+            if (installAfter)
+                fail(why);
+            else {
+                m_progress = -1;
+                setStatus(why, false);
+            }
+        };
+        if (reply->error() != QNetworkReply::NoError)
+            return failed(QStringLiteral("Falha no download (%1).").arg(reply->errorString()));
+        QFile check(partPath);
+        if (!check.open(QIODevice::ReadOnly) || check.size() < 1'000'000 || check.read(2) != "MZ"
+            || (m_assetSize > 0 && check.size() != m_assetSize))
+            return failed(QStringLiteral("O instalador baixado é inválido."));
+        check.close();
+        QFile::remove(installerPath());
+        if (!QFile::rename(partPath, installerPath()))
+            return failed(QStringLiteral("Não foi possível salvar o instalador."));
+        Log::info(QStringLiteral("Atualização: %1 baixado em %2 s.").arg(m_assetName).arg(ms / 1000.0, 0, 'f', 1));
         m_progress = -1;
-        // /VERYSILENT: sem a janela do Inno Setup; o progresso aparece na tela de atualização do app.
-        if (!QProcess::startDetached(path, {QStringLiteral("/VERYSILENT"), QStringLiteral("/SUPPRESSMSGBOXES"),
-                                            QStringLiteral("/NORESTART"), QStringLiteral("/UPDATE=1"),
-                                            QStringLiteral("/OPENWINDOW=%1").arg(reopenWindow ? 1 : 0)})) {
-            fail(QStringLiteral("Não foi possível iniciar o instalador."));
-            return;
+        if (installAfter) {
+            launch(reopenWindow);
+        } else {
+            setStatus(QStringLiteral("Versão %1 pronta para instalar.").arg(m_newVersion), false);
+            emit downloaded();
         }
-        setStatus(QStringLiteral("Instalando a versão %1…").arg(m_newVersion), true);
-        emit installerLaunched();
     });
+}
+
+void AutoUpdater::launch(bool reopenWindow)
+{
+    const QString path = installerPath();
+    Log::info(QStringLiteral("Atualização: iniciando %1").arg(path));
+    QFile attempt(attemptFile());
+    if (attempt.open(QIODevice::WriteOnly))
+        attempt.write(QStringLiteral("%1|%2").arg(m_newVersion, QDateTime::currentDateTimeUtc().toString(Qt::ISODate)).toUtf8());
+    m_progress = -1;
+    setStatus(QStringLiteral("Instalando a versão %1…").arg(m_newVersion), true);
+    // /VERYSILENT: sem a janela do Inno Setup; o progresso aparece na tela de atualização do app.
+    if (!QProcess::startDetached(path, {QStringLiteral("/VERYSILENT"), QStringLiteral("/SUPPRESSMSGBOXES"),
+                                        QStringLiteral("/NORESTART"), QStringLiteral("/UPDATE=1"),
+                                        QStringLiteral("/OPENWINDOW=%1").arg(reopenWindow ? 1 : 0)})) {
+        fail(QStringLiteral("Não foi possível iniciar o instalador."));
+        return;
+    }
+    emit installerLaunched();
 }
 
 } // namespace aeonis

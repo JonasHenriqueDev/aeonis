@@ -39,6 +39,7 @@ FocusScope {
         if (after !== undefined) seek(after - 3)
     }
     function setRate(r) { player.playbackRate = r }
+    property bool priming: false // carregando o primeiro quadro (mudo), depois pausa
     property var trim: null // { a, b } em segundos
     property bool trimming: false
     readonly property real duration: player.duration > 0 ? player.duration / 1000 : (media ? Math.max(0, win.durationOf(media)) : 0)
@@ -91,12 +92,14 @@ FocusScope {
     MediaPlayer {
         id: player
         videoOutput: video
-        audioOutput: AudioOutput { id: audio; volume: volumeSlider.value; muted: muteButton.muted }
+        audioOutput: AudioOutput { id: audio; volume: volumeSlider.value; muted: muteButton.muted || p.priming }
         onMediaStatusChanged: if (mediaStatus === MediaPlayer.LoadedMedia) {
             if (win.pendingSeek >= 0) {
                 p.seek(win.pendingSeek)
                 win.pendingSeek = -1
             }
+            // Sem play automático: toca em silêncio só até o primeiro quadro aparecer e pausa ali.
+            p.priming = true
             play()
         }
     }
@@ -109,6 +112,15 @@ FocusScope {
     Connections {
         target: App
         function onTrimDone(ok, path) { p.trimming = false; if (ok) p.trim = null }
+    }
+    Connections {
+        target: video.videoSink
+        function onVideoFrameChanged() {
+            if (p.priming) {
+                player.pause()
+                p.priming = false
+            }
+        }
     }
     // Excluindo este vídeo: solta o arquivo antes.
     Connections {
