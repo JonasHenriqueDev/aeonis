@@ -11,6 +11,7 @@
 #include "games/EventSources.h"
 #include "games/GameCatalog.h"
 #include "games/Highlighter.h"
+#include "share/YouTube.h"
 #include "ui/LibraryModel.h"
 
 #include <QFile>
@@ -312,6 +313,26 @@ private slots:
         av_packet_free(&pkt);
         avcodec_free_context(&v);
         avcodec_free_context(&a);
+    }
+
+    void youtubeRules()
+    {
+        // PKCE: exemplo do apêndice B da RFC 7636.
+        QCOMPARE(YouTube::pkceChallenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"),
+                 QByteArray("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"));
+        // Título: sem < >, espaços normalizados, no máximo 100 caracteres, nunca vazio.
+        QCOMPARE(YouTube::sanitizeTitle(QStringLiteral("  Pentakill  <LoL>  ")), QStringLiteral("Pentakill ‹LoL›"));
+        QCOMPARE(YouTube::sanitizeTitle(QString(150, QLatin1Char('a'))).size(), 100);
+        QCOMPARE(YouTube::sanitizeTitle(QStringLiteral("   ")), QStringLiteral("Clipe do Aeonis"));
+        // Descrição: limite de 5000 bytes em UTF-8.
+        QVERIFY(YouTube::sanitizeDescription(QString(3000, QChar(0x00E9))).toUtf8().size() <= 5000);
+        // Tags: separadas por vírgula, sem repetidas nem vazias.
+        QCOMPARE(YouTube::parseTags(QStringLiteral("League of Legends, pentakill,,PENTAKILL, <x>")),
+                 QStringList({QStringLiteral("League of Legends"), QStringLiteral("pentakill"), QStringLiteral("x")}));
+        QVERIFY(YouTube::parseTags(QString(600, QLatin1Char('a'))).isEmpty());
+        // Range de uma resposta 308.
+        QCOMPARE(YouTube::confirmedBytes("bytes=0-8388607"), qint64(8388608));
+        QCOMPARE(YouTube::confirmedBytes(""), qint64(0));
     }
 
 private:

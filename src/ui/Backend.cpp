@@ -9,11 +9,14 @@
 #include "core/Log.h"
 #include "core/Media.h"
 #include "core/MediaCache.h"
+#include "share/YouTube.h"
 
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QGuiApplication>
+#include <QClipboard>
 #include <QProcess>
 #include <QThreadPool>
 #include <QUrl>
@@ -50,6 +53,8 @@ QVariantMap Backend::status() const { return m_app->status(); }
 QVariantList Backend::settingsFields() const { return SettingsSchema::fields(m_app->settings()); }
 
 QObject *Backend::updater() const { return m_app->updater(); }
+
+QObject *Backend::youtube() const { return m_app->youtube(); }
 
 void Backend::setActive(bool active)
 {
@@ -216,6 +221,35 @@ bool Backend::saveSettings(const QVariantMap &values)
     emit settingsChanged();
     emit toast(QStringLiteral("Configurações salvas."), QStringLiteral("info"));
     return true;
+}
+
+void Backend::uploadToYouTube(const QString &path, const QVariantMap &video)
+{
+    const QString v = safeVideo(path);
+    if (v.isEmpty())
+        return;
+    YouTube::Video meta;
+    meta.title = video.value(QStringLiteral("title")).toString();
+    meta.description = video.value(QStringLiteral("description")).toString();
+    meta.tags = YouTube::parseTags(video.value(QStringLiteral("tags")).toString());
+    const QString privacy = video.value(QStringLiteral("privacy")).toString();
+    if (privacy == QLatin1String("public") || privacy == QLatin1String("private"))
+        meta.privacy = privacy;
+    meta.madeForKids = video.value(QStringLiteral("madeForKids")).toBool();
+    m_app->youtube()->upload(v, meta);
+}
+
+void Backend::copyText(const QString &text)
+{
+    QGuiApplication::clipboard()->setText(text);
+    emit toast(QStringLiteral("Link copiado."), QStringLiteral("info"));
+}
+
+void Backend::openYouTube(const QString &url)
+{
+    const QUrl u(url);
+    if (u.scheme() == QLatin1String("https") && (u.host() == QLatin1String("youtu.be") || u.host().endsWith(QLatin1String("youtube.com"))))
+        QDesktopServices::openUrl(u);
 }
 
 void Backend::saveClipNow() { m_app->saveManualClip(); }

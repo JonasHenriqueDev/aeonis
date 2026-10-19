@@ -14,6 +14,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   (`Aeonis-Setup-x.y.z.exe`, `Aeonis-x.y.z-portable.zip`, `Aeonis-Portable-x.y.z.exe`) e notas em pt-BR no
   formato das anteriores (Download, Novidades). A atualização automática do app depende do
   `Aeonis-Setup-*.exe` na release mais recente.
+- **Releases precisam do cliente OAuth do YouTube**: defina `AEONIS_YOUTUBE_CLIENT_ID` e
+  `AEONIS_YOUTUBE_CLIENT_SECRET` (variáveis de ambiente do usuário) antes do `package.ps1`; sem elas o envio
+  ao YouTube sai desativado. Nunca commite esses valores.
 
 ## Comandos
 
@@ -59,6 +62,8 @@ Um processo só, C++20 + Qt 6 + FFmpeg (libav* linkado estaticamente via vcpkg).
 - **Destaques**: `games/EventSources` (APIs locais do LoL e Game State Integration do CS2) emite eventos;
   cada evento vira `Library::event` (marcador na linha do tempo) e, conforme o `CaptureMode`, vai para o
   `Highlighter`, que junta eventos próximos num único clipe.
+- **YouTube** (`share/YouTube`): login OAuth no navegador (loopback 127.0.0.1 + PKCE), token no Gerenciador de
+  Credenciais do Windows, upload resumable em partes de 8 MB; links enviados em `youtube.json`. Diálogo em `qml/YouTubeDialog`.
 - **Histórico** (`core/Library`): `%LOCALAPPDATA%\Aeonis\library.jsonl`, append-only, no formato da antiga
   versão C# (sessões, clipes, eventos). `ui/LibraryModel` varre a pasta de vídeos e cruza com esse histórico
   para montar partidas, jogos e marcadores.

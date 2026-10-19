@@ -58,6 +58,11 @@ FocusScope {
         onMediaStatusChanged: if (mediaStatus === MediaPlayer.LoadedMedia) play()
     }
 
+    YouTubeDialog {
+        id: youtubeDialog
+        onClosed: p.forceActiveFocus()
+    }
+
     Connections {
         target: App
         function onTrimDone(ok, path) { p.trimming = false; if (ok) p.trim = null }
@@ -100,6 +105,17 @@ FocusScope {
                 onClicked: App.setSaved([p.media.path], !p.media.saved)
             }
             AButton { text: "Cortar"; iconName: "scissors"; enabled: p.duration > 0; onClicked: p.trim = { a: 0, b: p.duration } }
+            AButton {
+                readonly property var yt: App.youtube
+                readonly property bool sending: yt.uploading && youtubeDialog.norm(yt.uploadPath) === youtubeDialog.norm(p.media ? p.media.path : "")
+                readonly property bool sent: { yt.uploads; return p.media ? yt.uploadedUrl(p.media.path) !== "" : false }
+                text: sending ? "Enviando " + Math.floor(yt.progress * 100) + "%" : sent ? "No YouTube" : "YouTube"
+                iconName: "youtube"
+                iconColor: sent || sending ? "#ff0033" : Theme.text
+                ToolTip.visible: hovered
+                ToolTip.text: "Compartilhar este vídeo no YouTube"
+                onClicked: youtubeDialog.openFor(p.media)
+            }
             AButton { text: "Mostrar na pasta"; iconName: "folder"; onClicked: App.reveal(p.media.path) }
             AButton { text: "Abrir fora"; iconName: "external"; onClicked: App.openExternal(p.media.path) }
             AButton { text: "Excluir"; iconName: "trash"; danger: true; onClicked: win.confirmDelete(p.media) }

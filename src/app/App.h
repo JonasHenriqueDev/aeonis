@@ -29,6 +29,7 @@ class Highlighter;
 class Hotkeys;
 class TrayIcon;
 class WindowHost;
+class YouTube;
 
 class App : public QObject {
     Q_OBJECT
@@ -41,6 +42,7 @@ public:
     void applySettings(const Settings &updated);
     QVariantMap status() const;
     AutoUpdater *updater() const { return m_updater; }
+    YouTube *youtube() const { return m_youtube; }
 
     void showWindow(const QString &page);
     /// Encerramento do Windows: para a captura sem gerar a gravação (recuperada na próxima abertura).
@@ -88,6 +90,7 @@ private:
     TrayIcon *m_tray = nullptr;
     EventSource *m_events = nullptr;
     AutoUpdater *m_updater = nullptr;
+    YouTube *m_youtube = nullptr;
     Backend *m_backend = nullptr;
     WindowHost *m_window = nullptr;
     std::optional<GameDef> m_activeGame;

@@ -62,10 +62,26 @@ add_library(aeonis_engine STATIC
     src/games/EventSources.cpp src/games/EventSources.h
     src/app/Hotkeys.cpp src/app/Hotkeys.h
     src/ui/LibraryModel.cpp src/ui/LibraryModel.h
+    src/share/YouTube.cpp src/share/YouTube.h
 )
 target_include_directories(aeonis_engine PUBLIC src)
 target_compile_definitions(aeonis_engine PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE
     AEONIS_VERSION="${AEONIS_RELEASE_VERSION}")
+# Cliente OAuth do Google ("App para computador") para o envio ao YouTube. Fica fora do repositório:
+# vem das variáveis de ambiente AEONIS_YOUTUBE_CLIENT_ID/SECRET na configuração do CMake.
+foreach(_var AEONIS_YOUTUBE_CLIENT_ID AEONIS_YOUTUBE_CLIENT_SECRET)
+    if(DEFINED ENV{${_var}})
+        set(${_var} "$ENV{${_var}}" CACHE STRING "" FORCE)
+    else()
+        set(${_var} "" CACHE STRING "")
+    endif()
+endforeach()
+set_property(SOURCE src/share/YouTube.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+    AEONIS_YOUTUBE_CLIENT_ID="${AEONIS_YOUTUBE_CLIENT_ID}" AEONIS_YOUTUBE_CLIENT_SECRET="${AEONIS_YOUTUBE_CLIENT_SECRET}")
+if(NOT AEONIS_YOUTUBE_CLIENT_ID)
+    message(STATUS "AEONIS_YOUTUBE_CLIENT_ID vazio: o envio para o YouTube fica desativado nesta compilação")
+endif()
+
 target_link_libraries(aeonis_engine PUBLIC
     Qt6::Core Qt6::Gui Qt6::Network
     aeonis_ffmpeg
@@ -111,6 +127,7 @@ qt_add_qml_module(Aeonis
         qml/TitleBar.qml
         qml/SettingRow.qml
         qml/AButton.qml
+        qml/YouTubeDialog.qml
         qml/Format.js
 )
 

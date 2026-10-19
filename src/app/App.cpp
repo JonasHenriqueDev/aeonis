@@ -13,6 +13,7 @@
 #include "games/EventSources.h"
 #include "games/GameWatcher.h"
 #include "games/Highlighter.h"
+#include "share/YouTube.h"
 #include "ui/Backend.h"
 
 #include <QCoreApplication>
@@ -70,6 +71,22 @@ App::App(bool minimized, QObject *parent) : QObject(parent), m_settings(Settings
                QStringLiteral("O Aeonis %1 está disponível. Abra Sobre para instalar.").arg(version));
     });
     connect(m_updater, &AutoUpdater::installerLaunched, this, &App::exit);
+
+    // Envio ao YouTube: vive no App para continuar com a janela fechada. YouTubeClientId/Secret no
+    // settings.json trocam o cliente OAuth embutido (para quem usa um projeto próprio no Google Cloud).
+    m_youtube = new YouTube(m_settings.extra.value(QStringLiteral("YouTubeClientId")).toString(),
+                            m_settings.extra.value(QStringLiteral("YouTubeClientSecret")).toString(), this);
+    connect(m_youtube, &YouTube::connectFinished, this, [this](bool ok, const QString &message) {
+        if (!message.isEmpty())
+            emit toast(message, ok ? QStringLiteral("info") : QStringLiteral("error"));
+    });
+    connect(m_youtube, &YouTube::uploadFinished, this, [this](bool ok, const QString &path, const QString &url, const QString &message) {
+        emit toast(message, ok ? QStringLiteral("info") : QStringLiteral("error"));
+        if (!m_window->isOpen())
+            notify(ok ? QStringLiteral("Enviado para o YouTube") : QStringLiteral("Envio para o YouTube"),
+                   ok ? QStringLiteral("%1\n%2").arg(QFileInfo(path).fileName(), url) : message,
+                   ok ? QSystemTrayIcon::Information : QSystemTrayIcon::Critical);
+    });
 
     m_backend = new Backend(this, this);
     m_window = new WindowHost(m_backend, this);

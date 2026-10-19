@@ -36,6 +36,7 @@ Item {
         shrink: '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>',
         record: '<circle cx="12" cy="12" r="6" fill="CURRENT"/>',
         download: '<path d="M12 3v12M7 10l5 5 5-5M4 16v5h16v-5"/>',
+        youtube: '<rect x="2.5" y="5.5" width="19" height="13" rx="4"/><path d="M10 9.3v5.4l4.6-2.7z" fill="CURRENT"/>',
         close: '<path d="M6 6l12 12M18 6L6 18"/>'
     })
 

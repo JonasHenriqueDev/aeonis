@@ -21,6 +21,7 @@ class Backend : public QObject {
     Q_PROPERTY(QVariantMap library READ library NOTIFY libraryChanged)
     Q_PROPERTY(QVariantList settingsFields READ settingsFields NOTIFY settingsChanged)
     Q_PROPERTY(QObject *updater READ updater CONSTANT)
+    Q_PROPERTY(QObject *youtube READ youtube CONSTANT)
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
 public:
     Backend(App *app, QObject *parent = nullptr);
@@ -29,6 +30,7 @@ public:
     QVariantMap library() const { return m_library; }
     QVariantList settingsFields() const;
     QObject *updater() const;
+    QObject *youtube() const;
     bool loading() const { return m_loading; }
 
     /// Janela abriu/fechou: carrega ou descarta os dados da biblioteca.
@@ -43,6 +45,12 @@ public:
     Q_INVOKABLE void trim(const QString &path, double start, double end);
     Q_INVOKABLE void setSaved(const QStringList &paths, bool saved);
     Q_INVOKABLE bool saveSettings(const QVariantMap &values);
+    /// Envia o vídeo ao YouTube. `video`: title, description, tags (separadas por vírgula),
+    /// privacy (public | unlisted | private) e madeForKids.
+    Q_INVOKABLE void uploadToYouTube(const QString &path, const QVariantMap &video);
+    Q_INVOKABLE void copyText(const QString &text);
+    /// Abre um link do YouTube no navegador.
+    Q_INVOKABLE void openYouTube(const QString &url);
     Q_INVOKABLE void saveClipNow();
     Q_INVOKABLE void toggleRecording();
     Q_INVOKABLE QString folderUrl(const QString &path) const;
