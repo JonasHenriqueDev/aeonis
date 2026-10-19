@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(Aeonis VERSION 1.4.0 LANGUAGES CXX)
+project(Aeonis VERSION 1.5.0 LANGUAGES CXX)
 # A versão vem sempre do project() (não do cache: um valor antigo em cache gerou um app que se dizia
 # 1.0.0 dentro do pacote 1.1.0 e se atualizava em loop). Só o sufixo de pré-release é opcional.
 set(AEONIS_VERSION_SUFFIX "" CACHE STRING "Sufixo de pré-release (ex.: -beta1)")
@@ -121,7 +121,6 @@ qt_add_qml_module(Aeonis
         qml/Sidebar.qml
         qml/GameAvatar.qml
         qml/ClipTile.qml
-        qml/MatchesView.qml
         qml/ClipsView.qml
         qml/EmptyState.qml
         qml/PageHeader.qml
@@ -139,6 +138,8 @@ qt_add_qml_module(Aeonis
         qml/MatchAvatar.qml
         qml/GameChip.qml
         qml/GamePicker.qml
+        qml/SessionsView.qml
+        qml/GameGrid.qml
         qml/Format.js
 )
 

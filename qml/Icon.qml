@@ -53,6 +53,7 @@ Item {
         skipForward: '<path d="m5 4 10 8-10 8V4Z"/><path d="M19 5v14"/>',
         rewind: '<path d="M11 19 2 12l9-7v14Z"/><path d="M22 19l-9-7 9-7v14Z"/>',
         fastForward: '<path d="m13 19 9-7-9-7v14Z"/><path d="m2 19 9-7-9-7v14Z"/>',
+        calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>',
         search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
         check: '<path d="M5 12.5 10 17l9-10"/>',
         plus: '<path d="M12 5v14M5 12h14"/>',

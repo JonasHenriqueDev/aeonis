@@ -3,8 +3,8 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import "Format.js" as F
 
-// Janela principal: barra lateral (abas, jogos, status) + partidas / clipes / configurações,
-// com o player por cima. Criada ao abrir e destruída ao fechar (WindowHost).
+// Janela principal: coluna de ícones + Sessões (tela inicial) / Clipes / Configurações / Sobre, com o
+// player de clipes por cima. Criada ao abrir e destruída ao fechar (WindowHost).
 ApplicationWindow {
     id: win
     width: 1380
@@ -17,9 +17,14 @@ ApplicationWindow {
     flags: Qt.Window | Qt.FramelessWindowHint // barra de título própria (TitleBar.qml + WindowHost)
     font.family: Theme.font
 
-    property string view: ["settings", "about", "clips"].includes(InitialPage) ? InitialPage : "matches"
-    property string gameFilter: ""
-    property var current: null        // clipe aberto no player
+    property string view: ["settings", "about", "clips"].includes(InitialPage) ? InitialPage : "sessions"
+    property var current: null        // clipe aberto no player (por cima das telas)
+    // Seleção da tela de Sessões (vazio = a mais recente).
+    property string selGame: ""
+    property string selDay: ""        // aaaa-mm-dd
+    property string selSession: ""
+    property string selVideo: ""      // vídeo da sessão (padrão: a partida completa)
+    property string deletingPath: ""  // vídeo sendo excluído: o player solta o arquivo
     property string pendingMatch: ""  // partida a abrir assim que a biblioteca carregar ("match:<id>")
     property real pendingSeek: -1     // posição inicial (s) do próximo vídeo aberto no player
     property var thumbs: ({})         // id -> { url, duration } gerados depois da varredura
@@ -47,25 +52,36 @@ ApplicationWindow {
     onCurrentChanged: if (!current) setPlayerFullscreen(false)
 
     readonly property var lib: App.library
-    readonly property var matches: (lib.matches || []).filter(m => !gameFilter || m.game === gameFilter)
 
     function go(v) {
         if (v === "player") { debugPlayer = true; openDebugPlayer(); return }
         if (v.startsWith("match:")) {
-            view = "matches"
-            gameFilter = ""
             pendingMatch = v.slice(6)
             openPendingMatch()
             return
         }
-        if (v === "library") v = "matches"
+        if (v === "library" || v === "matches") v = "sessions"
         current = null
         view = v
     }
     function openClip(c) { current = c }
-    function openMatch(m) { const c = F.matchMain(m); if (c) current = c }
-    // Abre `c` (ex.: a partida completa) já na posição `t` segundos.
-    function openAt(c, t) { pendingSeek = t; current = c }
+    // Abre a sessão (partida) na tela de Sessões.
+    function openMatch(m) {
+        current = null
+        view = "sessions"
+        selGame = m.game
+        selDay = F.dayKey(m.start)
+        selSession = m.id
+        selVideo = ""
+    }
+    // Abre o vídeo `c` (ex.: a partida completa) da sua sessão já na posição `t` segundos.
+    function openAt(c, t) {
+        const m = matchOf(c)
+        if (!m) return
+        pendingSeek = t
+        openMatch(m)
+        selVideo = c.id
+    }
     function openPendingMatch() {
         if (!pendingMatch) return false
         const m = (App.library.matches || []).find(x => x.id === pendingMatch)
@@ -102,14 +118,13 @@ ApplicationWindow {
             win.thumbTick++
         }
         function onLibraryChanged() {
+            win.deletingPath = ""
             if (win.openDebugPlayer() || win.openPendingMatch())
                 return
             if (win.current) {
                 const c = win.findClip(win.current.id)
                 win.current = c
             }
-            if (win.gameFilter && !(App.library.games || []).some(g => g.name === win.gameFilter))
-                win.gameFilter = ""
         }
     }
 
@@ -126,7 +141,7 @@ ApplicationWindow {
 
         Sidebar {
             visible: !win.playerFullscreen
-            Layout.preferredWidth: 248
+            Layout.preferredWidth: 76
             Layout.fillHeight: true
         }
 
@@ -136,8 +151,9 @@ ApplicationWindow {
 
             Loader {
                 anchors.fill: parent
-                visible: !win.current
-                sourceComponent: win.view === "settings" ? settingsPage : win.view === "about" ? aboutPage : win.view === "clips" ? clipsPage : matchesPage
+                // Com um clipe aberto por cima, a tela de baixo sai (o player da sessão não continua tocando).
+                active: !win.current
+                sourceComponent: win.view === "settings" ? settingsPage : win.view === "about" ? aboutPage : win.view === "clips" ? clipsPage : sessionsPage
             }
             Loader {
                 anchors.fill: parent
@@ -147,7 +163,7 @@ ApplicationWindow {
         }
     }
 
-    Component { id: matchesPage; MatchesView {} }
+    Component { id: sessionsPage; SessionsView {} }
     Component { id: clipsPage; ClipsView {} }
     Component { id: settingsPage; SettingsView {} }
     Component { id: aboutPage; AboutView {} }
@@ -184,7 +200,8 @@ ApplicationWindow {
         }
         onAccepted: {
             const path = target.path
-            win.current = null // libera o arquivo antes de excluir
+            win.deletingPath = path // o player da sessão solta o arquivo
+            win.current = null      // e o de clipes fecha
             Qt.callLater(() => App.deleteClips([path]))
         }
     }

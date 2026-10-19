@@ -156,3 +156,15 @@ function combo(event) {
     parts.push(key)
     return parts.join("+")
 }
+
+// Nome de cada tipo de evento (filtro do player).
+function kindName(icon) {
+    return ({ crown: "Ace", swords: "Multikill", sword: "Abate", skull: "Morte", assist: "Assistência",
+              baron: "Barão", dragon: "Dragão", herald: "Arauto", grubs: "Vastilarvas", inhib: "Inibidor",
+              tower: "Torre", film: "Outros" })[icon] || icon
+}
+
+// Chave do dia local (aaaa-mm-dd), para agrupar sessões.
+function dayKey(d) { const x = new Date(d); return x.getFullYear() + "-" + pad(x.getMonth() + 1) + "-" + pad(x.getDate()) }
+
+function two(n) { return n < 10 ? "0" + n : "" + n }

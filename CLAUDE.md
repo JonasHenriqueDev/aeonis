@@ -81,7 +81,7 @@ Um processo só, C++20 + Qt 6 + FFmpeg (libav* linkado estaticamente via vcpkg).
   campo em `Settings.h`, `KnownKeys`/`fromJson`/`toJson`/`normalize` em `Settings.cpp`, e `fields()`/`apply()`
   em `ui/SettingsSchema.cpp` — a tela de configurações é gerada desse esquema (`qml/SettingsView` +
   `qml/SettingRow`, que escolhe o controle pelo `type`: bool, select, preset, int, number, hotkey, folder, games, customgames…). Listas e Flickables usam `qml/FastWheel` para a roda do mouse.
-- **UI**: QML (estilo FluentWinUI3, tema escuro em `qml/Theme.qml`). `app/WindowHost` cria a janela só quando
+- **UI**: QML (estilo FluentWinUI3, tema escuro em `qml/Theme.qml`). Tela inicial = `qml/SessionsView` (Sessões › jogo › dia, faixa de sessões e player embutido, no estilo do Outplayed); a seleção fica em `win.selGame/selDay/selSession`. `app/WindowHost` cria a janela só quando
   aberta e a destrói ao fechar para devolver memória; `ui/Backend` é o objeto `App` exposto ao QML. Arquivos
   QML novos precisam entrar em `qt_add_qml_module` no `CMakeLists.txt`.
 - **Barra de título própria**: a janela é `FramelessWindowHint` com `qml/TitleBar.qml`; o `TitleBarFilter`

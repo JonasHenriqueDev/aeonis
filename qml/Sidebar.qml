@@ -3,144 +3,84 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import "Format.js" as F
 
-// Barra lateral: abas, jogos (com contagem) e o status da captura. A marca fica na barra de título.
+// Coluna estreita de ícones (como no Outplayed): Sessões, Clipes, Configurações, Sobre e o status da
+// captura embaixo. O jogo e o dia são escolhidos dentro da tela de Sessões.
 Rectangle {
     color: Theme.side
     Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: Theme.line }
 
-    component NavButton: AbstractButton {
-        id: nb
+    component RailButton: AbstractButton {
+        id: rb
         property string iconName
         property bool on: false
-        property int count: -1
-        property string game: ""
-        property string gameIconUrl: ""
         Layout.fillWidth: true
-        implicitHeight: 38
+        implicitHeight: 62
+        topPadding: 10
+        bottomPadding: 10
         hoverEnabled: true
-        background: Rectangle {
-            radius: 9
-            color: nb.on ? Theme.cardHi : nb.hovered ? Theme.card : "transparent"
+        ToolTip.visible: hovered
+        ToolTip.text: text
+        ToolTip.delay: 500
+        background: Item {
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: 6
+                radius: 10
+                color: rb.on ? Theme.cardHi : rb.hovered ? Theme.card : "transparent"
+            }
+            Rectangle { // marca da aba ativa
+                visible: rb.on
+                x: 0
+                anchors.verticalCenter: parent.verticalCenter
+                width: 3; height: 24; radius: 1.5
+                color: Theme.accent
+            }
         }
-        contentItem: RowLayout {
-            spacing: 10
-            Item { width: 2 }
-            Icon { visible: nb.game === "" ; name: nb.iconName; size: 18; color: nb.on ? Theme.text : Theme.muted }
-            GameAvatar { visible: nb.game !== ""; game: nb.game; iconUrl: nb.gameIconUrl; size: 24 }
+        contentItem: ColumnLayout {
+            spacing: 3
+            Icon { Layout.alignment: Qt.AlignHCenter; name: rb.iconName; size: 21; color: rb.on ? Theme.text : Theme.muted }
             Text {
-                Layout.fillWidth: true
-                text: nb.text
-                elide: Text.ElideRight
-                color: nb.on ? Theme.text : Theme.muted
-                font.pixelSize: 14
-                font.weight: nb.on ? Font.DemiBold : Font.Normal
+                Layout.alignment: Qt.AlignHCenter
+                text: rb.text
+                color: rb.on ? Theme.text : Theme.muted
+                font.pixelSize: 10
             }
-            Text {
-                visible: nb.count >= 0
-                text: nb.count
-                color: Theme.faint
-                font.pixelSize: 12
-            }
-            Item { width: 4 }
         }
     }
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 12
-        anchors.topMargin: 14
-        spacing: 4
+        anchors.topMargin: 8
+        anchors.bottomMargin: 10
+        spacing: 2
 
-        NavButton { text: "Partidas"; iconName: "trophy"; on: win.view === "matches" && !win.current; onClicked: win.go("matches") }
-        NavButton { text: "Clipes"; iconName: "film"; on: win.view === "clips" && !win.current; onClicked: win.go("clips") }
+        RailButton { text: "Sessões"; iconName: "play"; on: win.view === "sessions" && !win.current; onClicked: win.go("sessions") }
+        RailButton { text: "Clipes"; iconName: "film"; on: win.view === "clips" && !win.current; onClicked: win.go("clips") }
+        Item { Layout.fillHeight: true }
+        RailButton { text: "Ajustes"; iconName: "gear"; on: win.view === "settings" && !win.current; onClicked: win.go("settings") }
+        RailButton { text: "Sobre"; iconName: "info"; on: win.view === "about" && !win.current; onClicked: win.go("about") }
 
-        Text {
-            text: "JOGOS"
-            color: Theme.faint
-            font.pixelSize: 11
-            font.letterSpacing: 1
-            Layout.topMargin: 18
-            Layout.leftMargin: 10
-            Layout.bottomMargin: 4
-        }
-
-        ListView {
+        // Status da captura: ponto (gravando/buffer/aguardando) com os detalhes na dica.
+        Item {
             Layout.fillWidth: true
-            Layout.fillHeight: true
-            clip: true
-            spacing: 2
-            boundsBehavior: Flickable.StopAtBounds
-            ScrollBar.vertical: ScrollBar {}
-            FastWheel {}
-            header: NavButton {
-                width: ListView.view.width
-                text: "Todos os jogos"
-                iconName: "grid"
-                on: win.gameFilter === ""
-                count: (win.lib.matches || []).length
-                onClicked: { win.gameFilter = ""; if (win.view === "settings" || win.view === "about") win.view = "matches"; win.current = null }
-            }
-            model: win.lib.games || []
-            delegate: NavButton {
-                required property var modelData
-                width: ListView.view.width
-                text: F.gameName(modelData.name)
-                game: modelData.name
-                gameIconUrl: modelData.icon
-                count: (win.lib.matches || []).filter(m => m.game === modelData.name).length
-                on: win.gameFilter === modelData.name
-                onClicked: { win.gameFilter = modelData.name; if (win.view === "settings" || win.view === "about") win.view = "matches"; win.current = null }
-            }
-        }
-
-        NavButton { text: "Configurações"; iconName: "gear"; on: win.view === "settings" && !win.current; onClicked: win.go("settings") }
-        NavButton { text: "Sobre"; iconName: "info"; on: win.view === "about" && !win.current; onClicked: win.go("about") }
-
-        // Status da captura
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.topMargin: 8
-            implicitHeight: statusRow.implicitHeight + 20
-            radius: 10
-            color: Theme.panel
-            border.color: Theme.line
-            readonly property var st: App.status
-            RowLayout {
-                id: statusRow
-                anchors.fill: parent
-                anchors.margins: 10
-                spacing: 10
-                Rectangle {
-                    width: 10; height: 10; radius: 5
-                    color: parent.parent.st.state === "recording" ? Theme.kill : parent.parent.st.state === "buffer" ? Theme.assist : Theme.faint
-                    SequentialAnimation on opacity {
-                        running: App.status.state === "recording"
-                        loops: Animation.Infinite
-                        NumberAnimation { to: 0.3; duration: 700 }
-                        NumberAnimation { to: 1; duration: 700 }
-                    }
-                }
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 1
-                    Text {
-                        Layout.fillWidth: true
-                        elide: Text.ElideRight
-                        color: Theme.text
-                        font.pixelSize: 13
-                        text: App.status.state === "recording" ? "Gravando · " + F.gameName(App.status.game)
-                            : App.status.state === "buffer" ? "Buffer ativo · " + F.gameName(App.status.game) : "Aguardando jogo"
-                    }
-                    Text {
-                        Layout.fillWidth: true
-                        elide: Text.ElideRight
-                        color: Theme.faint
-                        font.pixelSize: 11
-                        text: App.status.state === "idle" ? App.status.hotkeySave + " salva clipe · v" + App.status.version
-                                                          : App.status.encoder + " · " + App.status.hotkeySave + " salva clipe"
-                    }
+            implicitHeight: 34
+            Rectangle {
+                anchors.centerIn: parent
+                width: 12; height: 12; radius: 6
+                color: App.status.state === "recording" ? Theme.kill : App.status.state === "buffer" ? Theme.assist : Theme.faint
+                SequentialAnimation on opacity {
+                    running: App.status.state === "recording"
+                    loops: Animation.Infinite
+                    NumberAnimation { to: 0.3; duration: 700 }
+                    NumberAnimation { to: 1; duration: 700 }
                 }
             }
+            HoverHandler { id: statusHover }
+            ToolTip.visible: statusHover.hovered
+            ToolTip.text: (App.status.state === "recording" ? "Gravando · " + F.gameName(App.status.game)
+                         : App.status.state === "buffer" ? "Buffer ativo · " + F.gameName(App.status.game) : "Aguardando jogo")
+                          + "\n" + (App.status.state === "idle" ? App.status.hotkeySave + " salva clipe · v" + App.status.version
+                                                                : App.status.encoder + " · " + App.status.hotkeySave + " salva clipe")
         }
     }
 }

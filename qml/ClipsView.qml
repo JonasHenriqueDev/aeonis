@@ -6,10 +6,19 @@ import "Format.js" as F
 // Clipes (destaques, manuais e cortes) divididos por partida e por dia: cada bloco diz de qual
 // partida os clipes vieram (campeão, KDA, modo, resultado, data). As partidas completas ficam na aba Partidas.
 Item {
+    id: clipsPage
+    property string game: "" // filtro de jogo ("" = todos)
+    readonly property var gameNames: {
+        const out = []
+        for (const m of (App.library.matches || []))
+            if (m.clips.some(c => c.kind !== "full") && !out.includes(m.game)) out.push(m.game)
+        return out
+    }
     // Partidas que têm clipes, da mais nova para a mais antiga, com só os clipes (mais recentes primeiro).
     readonly property var groups: {
         const out = []
-        for (const m of win.matches) {
+        for (const m of (App.library.matches || [])) {
+            if (clipsPage.game && m.game !== clipsPage.game) continue
             const clips = m.clips.filter(c => c.kind !== "full")
             if (!clips.length) continue
             clips.sort((a, b) => new Date(b.created) - new Date(a.created))
@@ -22,8 +31,19 @@ Item {
     PageHeader {
         id: header
         anchors { left: parent.left; right: parent.right; top: parent.top; margins: 28 }
-        title: win.gameFilter ? "Clipes · " + F.gameName(win.gameFilter) : "Clipes"
-        subtitle: clipCount ? F.plural(clipCount, "clipe", "clipes") + " · " + F.plural(groups.length, "partida", "partidas") : ""
+        title: clipsPage.game ? "Clipes · " + F.gameName(clipsPage.game) : "Clipes"
+        game: clipsPage.game
+        extra: Component {
+            ComboBox {
+                implicitWidth: 220
+                readonly property var options: [{ value: "", label: "Todos os jogos" }].concat(clipsPage.gameNames.map(g => ({ value: g, label: F.gameName(g) })))
+                model: options
+                textRole: "label"
+                currentIndex: Math.max(0, options.findIndex(o => o.value === clipsPage.game))
+                onActivated: index => clipsPage.game = options[index].value
+            }
+        }
+        subtitle: clipCount ? F.plural(clipCount, "clipe", "clipes") + " · " + F.plural(groups.length, "sessão", "sessões") : ""
     }
 
     EmptyState { anchors.centerIn: parent; visible: clipCount === 0 }
@@ -81,7 +101,7 @@ Item {
                         hoverEnabled: true
                         onClicked: win.openMatch(group.match)
                         ToolTip.visible: hovered
-                        ToolTip.text: "Abrir a partida"
+                        ToolTip.text: "Abrir a sessão"
                         background: Item {}
                         contentItem: RowLayout {
                             spacing: 12

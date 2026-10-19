@@ -5,40 +5,31 @@ import QtMultimedia
 import "Format.js" as F
 
 // Player: vídeo (Qt Multimedia/FFmpeg: H.264 e HEVC sem codec da Store), linha do tempo com os
-// eventos da partida (ícones por tipo), recorte sem re-encode, os vídeos da mesma partida em cima
-// e a lista de eventos ao lado.
+// eventos da partida (ícones por tipo), recorte sem re-encode e, ao lado, o filtro e a lista de eventos.
+// `embedded`: dentro da tela de Sessões (sem "Voltar"; título da sessão vem de fora).
 FocusScope {
     id: p
     property var media
+    property bool embedded: false
+    property string title: ""    // substitui o título gerado (ex.: "Sessão 01")
+    property string subtitle: ""
     readonly property var match: media ? win.matchOf(media) : null
     readonly property var info: match && match.info ? match.info : ({})
     readonly property bool hasInfo: info.champion !== undefined
     readonly property var fullVideo: match ? match.clips.find(c => c.kind === "full") || null : null
-    // Faixa do topo: dia e jogo escolhidos (começam no da partida aberta).
-    property string stripDay: ""
-    property string stripGame: ""
-    onMatchChanged: if (match) { stripDay = F.dayLabel(match.start); stripGame = match.game }
-    readonly property var allMatches: App.library.matches || []
-    readonly property var gameOptions: {
-        const out = []
-        for (const m of allMatches)
-            if (!out.some(g => g.game === m.game)) out.push({ game: m.game, label: F.gameName(m.game) })
-        return out
+    // Filtro de eventos por tipo (ícone), como o "Filter events" do Outplayed.
+    property var hiddenKinds: ({})
+    function toggleKind(icon) {
+        const h = Object.assign({}, hiddenKinds)
+        if (h[icon]) delete h[icon]
+        else h[icon] = true
+        hiddenKinds = h
     }
-    readonly property var dayOptions: {
-        const out = []
-        for (const m of allMatches) {
-            if (stripGame && m.game !== stripGame) continue
-            const d = F.dayLabel(m.start)
-            const o = out.find(x => x.day === d)
-            if (o) o.count++
-            else out.push({ day: d, count: 1 })
-        }
-        return out.map(o => ({ day: o.day, label: o.day + " (" + o.count + ")" }))
-    }
-    readonly property var stripMatches: allMatches.filter(m => (!stripGame || m.game === stripGame) && F.dayLabel(m.start) === stripDay)
-    // Eventos do vídeo em ordem (anterior/próximo).
-    readonly property var markerTimes: media ? media.markers.map(m => m.t).sort((a, b) => a - b) : []
+    readonly property var allMarkers: media ? media.markers : []
+    readonly property var kinds: F.eventSummary(allMarkers)
+    readonly property var visibleMarkers: allMarkers.filter(m => !hiddenKinds[F.eventIcon(m.label)])
+    // Eventos visíveis em ordem (anterior/próximo).
+    readonly property var markerTimes: visibleMarkers.map(m => m.t).sort((a, b) => a - b)
     function prevEvent() {
         const before = markerTimes.filter(t => t - 3 < position - 1.5)
         seek(before.length ? Math.max(0, before[before.length - 1] - 3) : 0)
@@ -85,7 +76,7 @@ FocusScope {
 
     Keys.onPressed: event => {
         wake()
-        if (event.key === Qt.Key_Escape) { if (fullscreen) win.setPlayerFullscreen(false); else if (trim) trim = null; else win.current = null }
+        if (event.key === Qt.Key_Escape) { if (fullscreen) win.setPlayerFullscreen(false); else if (trim) trim = null; else if (!embedded) win.current = null }
         else if (event.key === Qt.Key_F || event.key === Qt.Key_F11) win.setPlayerFullscreen(!fullscreen)
         else if (event.key === Qt.Key_Space) { player.playbackState === MediaPlayer.PlayingState ? player.pause() : player.play() }
         else if (event.key === Qt.Key_Right) seek(position + 5)
@@ -119,17 +110,27 @@ FocusScope {
         target: App
         function onTrimDone(ok, path) { p.trimming = false; if (ok) p.trim = null }
     }
+    // Excluindo este vídeo: solta o arquivo antes.
+    Connections {
+        target: win
+        function onDeletingPathChanged() {
+            if (p.media && win.deletingPath === p.media.path) {
+                player.stop()
+                player.source = ""
+            }
+        }
+    }
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: p.fullscreen ? 0 : 20
+        anchors.margins: p.fullscreen || p.embedded ? 0 : 20
         spacing: 14
 
         // Barra superior
         RowLayout {
             visible: !p.fullscreen
             spacing: 10
-            AButton { text: "Voltar"; iconName: "back"; onClicked: win.current = null }
+            AButton { visible: !p.embedded; text: "Voltar"; iconName: "back"; onClicked: win.current = null }
             MatchAvatar { match: p.match; size: 38 }
             ColumnLayout {
                 spacing: 1
@@ -137,7 +138,8 @@ FocusScope {
                 Text {
                     Layout.fillWidth: true
                     elide: Text.ElideRight
-                    text: !p.media ? ""
+                    text: p.title !== "" ? p.title
+                        : !p.media ? ""
                         : p.media.kind === "full" && p.hasInfo ? p.info.champion + " · " + F.kda(p.info)
                         : F.chipText(p.media) + " · " + (p.hasInfo ? p.info.champion : F.gameName(p.media.game))
                     color: Theme.text
@@ -147,7 +149,7 @@ FocusScope {
                 Text {
                     Layout.fillWidth: true
                     elide: Text.ElideRight
-                    text: !p.media ? "" : [
+                    text: p.subtitle !== "" ? p.subtitle : !p.media ? "" : [
                         F.modeText(p.info), F.resultText(p.info),
                         F.dayLabel(p.media.created) + ", " + F.time(p.media.created),
                         p.media.matchTime >= 0 ? F.dur(p.media.matchTime) + " na partida" : "",
@@ -158,7 +160,7 @@ FocusScope {
                 }
             }
             AButton {
-                visible: !!p.media && p.media.kind !== "full" && p.media.matchTime >= 0 && p.fullVideo !== null
+                visible: !p.embedded && !!p.media && p.media.kind !== "full" && p.media.matchTime >= 0 && p.fullVideo !== null
                 text: "Ver na partida"
                 iconName: "clock"
                 ToolTip.visible: hovered
@@ -198,124 +200,6 @@ FocusScope {
                 onClicked: App.openExternal(p.media.path)
             }
             AButton { text: "Excluir"; iconName: "trash"; danger: true; onClicked: win.confirmDelete(p.media) }
-        }
-
-        // Partidas (sessões de jogo) do dia e do jogo escolhidos, como no Outplayed. Os clipes ficam na aba Clipes.
-        RowLayout {
-            visible: !p.fullscreen && p.dayOptions.length > 0
-            Layout.fillWidth: true
-            spacing: 10
-            ColumnLayout {
-                spacing: 6
-                Layout.alignment: Qt.AlignTop
-                ComboBox {
-                    id: dayBox
-                    Layout.preferredWidth: 190
-                    model: p.dayOptions
-                    textRole: "label"
-                    currentIndex: Math.max(0, p.dayOptions.findIndex(d => d.day === p.stripDay))
-                    onActivated: index => p.stripDay = p.dayOptions[index].day
-                    ToolTip.visible: hovered
-                    ToolTip.text: "Dia"
-                }
-                ComboBox {
-                    Layout.preferredWidth: 190
-                    model: p.gameOptions
-                    textRole: "label"
-                    currentIndex: Math.max(0, p.gameOptions.findIndex(g => g.game === p.stripGame))
-                    onActivated: index => {
-                        p.stripGame = p.gameOptions[index].game
-                        if (!p.dayOptions.some(d => d.day === p.stripDay) && p.dayOptions.length)
-                            p.stripDay = p.dayOptions[0].day
-                    }
-                    ToolTip.visible: hovered
-                    ToolTip.text: "Jogo"
-                }
-            }
-            ListView {
-                id: strip
-                Layout.fillWidth: true
-                Layout.preferredHeight: 76
-                orientation: ListView.Horizontal
-                spacing: 8
-                clip: true
-                boundsBehavior: Flickable.StopAtBounds
-                model: p.stripMatches
-                ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded; height: 6 }
-                FastWheel { horizontal: true }
-                delegate: AbstractButton {
-                    id: mini
-                    required property var modelData
-                    required property int index
-                    readonly property var info: modelData.info || {}
-                    readonly property var main: F.matchMain(modelData)
-                    readonly property bool on: !!p.match && modelData.id === p.match.id
-                    width: 250
-                    height: 70
-                    hoverEnabled: true
-                    onClicked: win.openMatch(modelData)
-                    background: Rectangle {
-                        radius: 10
-                        color: mini.on ? Theme.cardHi : mini.hovered ? Theme.card : Theme.panel
-                        border.color: mini.on ? Theme.accent : Theme.line
-                    }
-                    contentItem: RowLayout {
-                        spacing: 8
-                        Rectangle {
-                            Layout.leftMargin: 6
-                            Layout.preferredWidth: 104
-                            Layout.preferredHeight: 58
-                            radius: 6
-                            color: Theme.card
-                            clip: true
-                            Image {
-                                anchors.fill: parent
-                                source: mini.main ? win.thumbOf(mini.main) : ""
-                                fillMode: Image.PreserveAspectCrop
-                                asynchronous: true
-                                sourceSize.width: 220
-                            }
-                            Rectangle {
-                                anchors { right: parent.right; bottom: parent.bottom; margins: 4 }
-                                visible: !!mini.main
-                                radius: 4; height: 15; width: miniDur.implicitWidth + 8
-                                color: "#cc000000"
-                                Text { id: miniDur; anchors.centerIn: parent; text: mini.main ? F.dur(win.durationOf(mini.main)) : ""; color: "white"; font.pixelSize: 10 }
-                            }
-                        }
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            Layout.rightMargin: 8
-                            spacing: 2
-                            RowLayout {
-                                spacing: 6
-                                MatchAvatar { match: mini.modelData; size: 20 }
-                                Text {
-                                    Layout.fillWidth: true
-                                    elide: Text.ElideRight
-                                    text: mini.info.champion || ("Partida " + (p.stripMatches.length - mini.index))
-                                    color: Theme.text
-                                    font.pixelSize: 12
-                                    font.weight: Font.DemiBold
-                                }
-                            }
-                            Text {
-                                Layout.fillWidth: true
-                                elide: Text.ElideRight
-                                text: mini.info.kills !== undefined ? F.kda(mini.info) + (F.resultText(mini.info) ? " · " + F.resultText(mini.info) : "")
-                                                                    : F.plural(mini.modelData.clips.length, "vídeo", "vídeos")
-                                color: mini.info.result === "Win" ? Theme.assist : mini.info.result === "Lose" ? Theme.kill : Theme.muted
-                                font.pixelSize: 11
-                            }
-                            Text {
-                                text: F.time(mini.modelData.start) + " – " + F.time(mini.modelData.end)
-                                color: Theme.faint
-                                font.pixelSize: 11
-                            }
-                        }
-                    }
-                }
-            }
         }
 
         RowLayout {
@@ -452,7 +336,7 @@ FocusScope {
                             onPositionChanged: mouse => { if (pressed) p.seek(mouse.x / width * p.duration) }
                         }
                         Repeater {
-                            model: p.media && p.duration > 0 ? p.media.markers : []
+                            model: p.duration > 0 ? p.visibleMarkers : []
                             delegate: EventBadge {
                                 required property var modelData
                                 label: modelData.label
@@ -606,7 +490,7 @@ FocusScope {
                 }
             }
 
-            // Desta partida
+            // Eventos: filtro por tipo (liga/desliga na linha do tempo) e a lista.
             Rectangle {
                 visible: !p.fullscreen
                 Layout.preferredWidth: 280
@@ -617,21 +501,70 @@ FocusScope {
                 ColumnLayout {
                     anchors.fill: parent
                     anchors.margins: 12
-                    spacing: 10
-                    Text {
-                        text: "Eventos" + (p.media && p.media.markers.length ? " · " + p.media.markers.length : "")
-                        color: Theme.muted
-                        font.pixelSize: 12
-                        font.weight: Font.DemiBold
+                    spacing: 8
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Filtrar eventos"
+                            color: Theme.text
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                        }
+                        Text {
+                            visible: Object.keys(p.hiddenKinds).length > 0
+                            text: "Mostrar todos"
+                            color: Theme.accent
+                            font.pixelSize: 12
+                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: p.hiddenKinds = ({}) }
+                        }
                     }
                     Text {
-                        visible: !p.media || p.media.markers.length === 0
+                        visible: p.kinds.length === 0
                         Layout.fillWidth: true
                         wrapMode: Text.Wrap
                         text: "Nenhum evento marcado neste vídeo."
                         color: Theme.faint
                         font.pixelSize: 12
                     }
+                    Repeater {
+                        model: p.kinds
+                        delegate: AbstractButton {
+                            id: kindRow
+                            required property var modelData
+                            readonly property bool shown: !p.hiddenKinds[modelData.icon]
+                            Layout.fillWidth: true
+                            implicitHeight: 34
+                            hoverEnabled: true
+                            onClicked: p.toggleKind(modelData.icon)
+                            background: Rectangle { radius: 8; color: kindRow.hovered ? Theme.card : "transparent" }
+                            contentItem: RowLayout {
+                                spacing: 10
+                                EventBadge { Layout.leftMargin: 4; label: kindRow.modelData.label; size: 22; opacity: kindRow.shown ? 1 : 0.35 }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: F.kindName(kindRow.modelData.icon)
+                                    color: kindRow.shown ? Theme.text : Theme.faint
+                                    font.pixelSize: 13
+                                }
+                                Text { text: kindRow.modelData.count; color: Theme.muted; font.pixelSize: 12 }
+                                // Liga/desliga
+                                Rectangle {
+                                    Layout.rightMargin: 4
+                                    width: 30; height: 16; radius: 8
+                                    color: kindRow.shown ? Theme.accent : Theme.cardHi
+                                    Rectangle {
+                                        width: 12; height: 12; radius: 6
+                                        y: 2
+                                        x: kindRow.shown ? parent.width - width - 2 : 2
+                                        color: "white"
+                                        Behavior on x { NumberAnimation { duration: 120 } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Rectangle { visible: p.visibleMarkers.length > 0; Layout.fillWidth: true; Layout.topMargin: 4; height: 1; color: Theme.line }
                     ListView {
                         id: eventList
                         Layout.fillWidth: true
@@ -639,7 +572,7 @@ FocusScope {
                         clip: true
                         spacing: 2
                         boundsBehavior: Flickable.StopAtBounds
-                        model: p.media ? p.media.markers : []
+                        model: p.visibleMarkers
                         ScrollBar.vertical: ScrollBar {}
                         FastWheel {}
                         delegate: AbstractButton {
