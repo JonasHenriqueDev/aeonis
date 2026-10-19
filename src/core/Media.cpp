@@ -1,0 +1,403 @@
+#include "Media.h"
+#include "Log.h"
+
+#include <QFile>
+#include <QFileInfo>
+#include <QImage>
+
+#include <algorithm>
+#include <limits>
+#include <memory>
+#include <vector>
+
+extern "C" {
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libavutil/imgutils.h>
+#include <libswscale/swscale.h>
+}
+
+namespace aeonis::Media {
+
+namespace {
+
+QString avError(int code)
+{
+    char buf[AV_ERROR_MAX_STRING_SIZE]{};
+    av_strerror(code, buf, sizeof(buf));
+    return QString::fromUtf8(buf);
+}
+
+struct InputDeleter {
+    void operator()(AVFormatContext *ctx) const { avformat_close_input(&ctx); }
+};
+using Input = std::unique_ptr<AVFormatContext, InputDeleter>;
+
+Input openInput(const QString &file, bool probe, QString *error = nullptr)
+{
+    AVFormatContext *ctx = nullptr;
+    const QByteArray path = file.toUtf8();
+    int ret = avformat_open_input(&ctx, path.constData(), nullptr, nullptr);
+    if (ret < 0) {
+        if (error) *error = QStringLiteral("abrir %1: %2").arg(file, avError(ret));
+        return {};
+    }
+    Input in(ctx);
+    if (probe) {
+        ret = avformat_find_stream_info(ctx, nullptr);
+        if (ret < 0) {
+            if (error) *error = QStringLiteral("analisar %1: %2").arg(file, avError(ret));
+            return {};
+        }
+    }
+    return in;
+}
+
+int firstStream(AVFormatContext *ctx, AVMediaType type)
+{
+    for (unsigned i = 0; i < ctx->nb_streams; ++i)
+        if (ctx->streams[i]->codecpar->codec_type == type)
+            return int(i);
+    return -1;
+}
+
+/// MP4 de saída com uma faixa de vídeo e (opcional) uma de áudio, copiadas de `in`.
+class Mp4Writer {
+public:
+    ~Mp4Writer()
+    {
+        if (m_ctx) {
+            if (m_ctx->pb) avio_closep(&m_ctx->pb);
+            avformat_free_context(m_ctx);
+        }
+    }
+
+    bool open(const QString &path, AVFormatContext *in, int videoIn, int audioIn, QString *error)
+    {
+        m_path = path;
+        const QByteArray file = path.toUtf8();
+        int ret = avformat_alloc_output_context2(&m_ctx, nullptr, "mp4", file.constData());
+        if (ret < 0 || !m_ctx) {
+            *error = QStringLiteral("criar mp4: %1").arg(avError(ret));
+            return false;
+        }
+        for (int idx : {videoIn, audioIn}) {
+            if (idx < 0) {
+                m_out.push_back(-1);
+                continue;
+            }
+            AVStream *src = in->streams[idx];
+            AVStream *dst = avformat_new_stream(m_ctx, nullptr);
+            avcodec_parameters_copy(dst->codecpar, src->codecpar);
+            dst->codecpar->codec_tag = 0;
+            if (dst->codecpar->codec_id == AV_CODEC_ID_HEVC)
+                dst->codecpar->codec_tag = MKTAG('h', 'v', 'c', '1'); // reproduz no Windows/QuickTime
+            dst->time_base = src->time_base;
+            m_out.push_back(dst->index);
+        }
+        ret = avio_open(&m_ctx->pb, file.constData(), AVIO_FLAG_WRITE);
+        if (ret < 0) {
+            *error = QStringLiteral("criar %1: %2").arg(path, avError(ret));
+            return false;
+        }
+        AVDictionary *opts = nullptr;
+        av_dict_set(&opts, "movflags", "+faststart", 0);
+        ret = avformat_write_header(m_ctx, &opts);
+        av_dict_free(&opts);
+        if (ret < 0) {
+            *error = QStringLiteral("cabeçalho mp4: %1").arg(avError(ret));
+            return false;
+        }
+        m_headerWritten = true;
+        return true;
+    }
+
+    /// `slot` 0 = vídeo, 1 = áudio. Timestamps já relativos ao início, em `tb`.
+    bool write(int slot, AVPacket *pkt, AVRational tb)
+    {
+        const int out = m_out[slot];
+        if (out < 0)
+            return true;
+        AVStream *st = m_ctx->streams[out];
+        av_packet_rescale_ts(pkt, tb, st->time_base);
+        if (pkt->dts != AV_NOPTS_VALUE) {
+            const int64_t none = std::numeric_limits<int64_t>::min();
+            // Salto absurdo (timestamp corrompido/volta do relógio do TS): descarta o pacote.
+            const int64_t jump = av_rescale_q(60, AVRational{1, 1}, st->time_base);
+            if (m_lastDts[slot] == none ? pkt->dts > jump : pkt->dts - m_lastDts[slot] > jump)
+                return true;
+            if (m_lastDts[slot] != none && pkt->dts <= m_lastDts[slot])
+                return true; // duplicado ou fora de ordem: descarta
+            m_lastDts[slot] = pkt->dts;
+        }
+        pkt->stream_index = out;
+        pkt->pos = -1;
+        const int ret = av_interleaved_write_frame(m_ctx, pkt);
+        if (ret < 0) {
+            m_error = avError(ret);
+            return false;
+        }
+        ++m_packets;
+        return true;
+    }
+
+    bool finish(QString *error)
+    {
+        if (!m_headerWritten)
+            return false;
+        int ret = av_write_trailer(m_ctx);
+        avio_closep(&m_ctx->pb);
+        if (ret < 0) {
+            *error = QStringLiteral("finalizar mp4: %1").arg(avError(ret));
+            return false;
+        }
+        if (m_packets == 0) {
+            *error = QStringLiteral("nenhum quadro");
+            return false;
+        }
+        return true;
+    }
+
+    QString lastError() const { return m_error; }
+
+private:
+    AVFormatContext *m_ctx = nullptr;
+    QString m_path;
+    std::vector<int> m_out;
+    int64_t m_lastDts[2] = {std::numeric_limits<int64_t>::min(), std::numeric_limits<int64_t>::min()};
+    bool m_headerWritten = false;
+    qint64 m_packets = 0;
+    QString m_error;
+};
+
+struct PacketDeleter {
+    void operator()(AVPacket *p) const { av_packet_free(&p); }
+};
+
+} // namespace
+
+double duration(const QString &file)
+{
+    Input in = openInput(file, true);
+    if (!in || in->duration <= 0)
+        return 0;
+    return in->duration / double(AV_TIME_BASE);
+}
+
+double thumbnail(const QString &video, const QString &jpg, int width)
+{
+    Input in = openInput(video, true);
+    if (!in)
+        return 0;
+    const double dur = in->duration > 0 ? in->duration / double(AV_TIME_BASE) : 0;
+    const int vs = av_find_best_stream(in.get(), AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+    if (vs < 0)
+        return dur;
+    AVStream *st = in->streams[vs];
+    const AVCodec *codec = avcodec_find_decoder(st->codecpar->codec_id);
+    if (!codec)
+        return dur;
+    AVCodecContext *dec = avcodec_alloc_context3(codec);
+    avcodec_parameters_to_context(dec, st->codecpar);
+    dec->thread_count = 2;
+    if (avcodec_open2(dec, codec, nullptr) < 0) {
+        avcodec_free_context(&dec);
+        return dur;
+    }
+    std::unique_ptr<AVPacket, PacketDeleter> pkt(av_packet_alloc());
+    AVFrame *frame = av_frame_alloc();
+    bool got = false;
+    for (int attempt = 0; attempt < 2 && !got; ++attempt) {
+        if (attempt == 0 && dur > 2.5)
+            av_seek_frame(in.get(), -1, 2 * AV_TIME_BASE, AVSEEK_FLAG_BACKWARD);
+        else
+            av_seek_frame(in.get(), -1, 0, AVSEEK_FLAG_BACKWARD);
+        avcodec_flush_buffers(dec);
+        int reads = 0;
+        while (!got && reads++ < 600 && av_read_frame(in.get(), pkt.get()) >= 0) {
+            if (pkt->stream_index == vs && avcodec_send_packet(dec, pkt.get()) >= 0)
+                got = avcodec_receive_frame(dec, frame) == 0;
+            av_packet_unref(pkt.get());
+        }
+        if (!got && avcodec_send_packet(dec, nullptr) >= 0)
+            got = avcodec_receive_frame(dec, frame) == 0;
+    }
+    if (got && frame->width > 0 && frame->height > 0) {
+        const int w = std::min(width, frame->width) & ~1;
+        const int h = std::max(2, int(double(frame->height) * w / frame->width) & ~1);
+        SwsContext *sws = sws_getContext(frame->width, frame->height, AVPixelFormat(frame->format), w, h,
+                                         AV_PIX_FMT_RGB24, SWS_BILINEAR, nullptr, nullptr, nullptr);
+        if (sws) {
+            QImage img(w, h, QImage::Format_RGB888);
+            uint8_t *dst[4] = {img.bits(), nullptr, nullptr, nullptr};
+            int stride[4] = {int(img.bytesPerLine()), 0, 0, 0};
+            sws_scale(sws, frame->data, frame->linesize, 0, frame->height, dst, stride);
+            sws_freeContext(sws);
+            img.save(jpg, "JPG", 82);
+        }
+    }
+    av_frame_free(&frame);
+    avcodec_free_context(&dec);
+    return dur;
+}
+
+RemuxResult concat(const QStringList &segments, const QString &output)
+{
+    RemuxResult r;
+    if (segments.isEmpty()) {
+        r.error = QStringLiteral("nenhum segmento");
+        return r;
+    }
+    Input first = openInput(segments.first(), true, &r.error);
+    if (!first)
+        return r;
+    const int v0 = firstStream(first.get(), AVMEDIA_TYPE_VIDEO);
+    const int a0 = firstStream(first.get(), AVMEDIA_TYPE_AUDIO);
+    if (v0 < 0) {
+        r.error = QStringLiteral("segmento sem vídeo");
+        return r;
+    }
+    bool writerOk = false;
+    {
+        Mp4Writer writer;
+        if (!writer.open(output, first.get(), v0, a0, &r.error)) {
+            first.reset();
+            QFile::remove(output);
+            return r;
+        }
+        std::unique_ptr<AVPacket, PacketDeleter> pkt(av_packet_alloc());
+        int64_t baseUs = AV_NOPTS_VALUE;
+        bool failed = false;
+        for (int i = 0; i < segments.size() && !failed; ++i) {
+            Input in = i == 0 ? std::move(first) : openInput(segments[i], false);
+            if (!in)
+                continue; // segmento ilegível (ex.: apagado): segue com os outros
+            const int v = firstStream(in.get(), AVMEDIA_TYPE_VIDEO);
+            const int a = a0 >= 0 ? firstStream(in.get(), AVMEDIA_TYPE_AUDIO) : -1;
+            while (av_read_frame(in.get(), pkt.get()) >= 0) {
+                const int slot = pkt->stream_index == v ? 0 : (pkt->stream_index == a && a >= 0) ? 1 : -1;
+                if (slot < 0 || (pkt->dts == AV_NOPTS_VALUE && pkt->pts == AV_NOPTS_VALUE)) {
+                    av_packet_unref(pkt.get());
+                    continue;
+                }
+                if (pkt->dts == AV_NOPTS_VALUE) pkt->dts = pkt->pts;
+                if (pkt->pts == AV_NOPTS_VALUE) pkt->pts = pkt->dts;
+                const AVRational tb = in->streams[pkt->stream_index]->time_base;
+                const int64_t dtsUs = av_rescale_q(pkt->dts, tb, AV_TIME_BASE_Q);
+                if (baseUs == AV_NOPTS_VALUE) {
+                    // O clipe começa no primeiro keyframe de vídeo; áudio anterior é descartado.
+                    if (slot != 0 || !(pkt->flags & AV_PKT_FLAG_KEY)) {
+                        av_packet_unref(pkt.get());
+                        continue;
+                    }
+                    baseUs = dtsUs;
+                }
+                const int64_t base = av_rescale_q(baseUs, AV_TIME_BASE_Q, tb);
+                pkt->pts -= base;
+                pkt->dts -= base;
+                if (pkt->dts < 0) {
+                    av_packet_unref(pkt.get());
+                    continue;
+                }
+                if (!writer.write(slot, pkt.get(), tb)) {
+                    r.error = QStringLiteral("gravar: %1").arg(writer.lastError());
+                    failed = true;
+                    av_packet_unref(pkt.get());
+                    break;
+                }
+                av_packet_unref(pkt.get());
+            }
+        }
+        writerOk = !failed && writer.finish(&r.error);
+    }
+    if (!writerOk || QFileInfo(output).size() == 0) {
+        QFile::remove(output);
+        if (r.error.isEmpty()) r.error = QStringLiteral("arquivo vazio");
+        return r;
+    }
+    r.ok = true;
+    r.duration = duration(output);
+    return r;
+}
+
+RemuxResult trim(const QString &source, const QString &output, double start, double end)
+{
+    RemuxResult r;
+    Input in = openInput(source, true, &r.error);
+    if (!in)
+        return r;
+    const int v = firstStream(in.get(), AVMEDIA_TYPE_VIDEO);
+    const int a = firstStream(in.get(), AVMEDIA_TYPE_AUDIO);
+    if (v < 0) {
+        r.error = QStringLiteral("vídeo sem faixa de imagem");
+        return r;
+    }
+    const int64_t startUs = int64_t(start * AV_TIME_BASE);
+    const int64_t endUs = int64_t(end * AV_TIME_BASE);
+    const int64_t originUs = in->start_time != AV_NOPTS_VALUE ? in->start_time : 0;
+    av_seek_frame(in.get(), -1, originUs + startUs, AVSEEK_FLAG_BACKWARD);
+
+    bool ok = false;
+    {
+        Mp4Writer writer;
+        if (!writer.open(output, in.get(), v, a, &r.error)) {
+            in.reset();
+            QFile::remove(output);
+            return r;
+        }
+        std::unique_ptr<AVPacket, PacketDeleter> pkt(av_packet_alloc());
+        int64_t baseUs = AV_NOPTS_VALUE;
+        bool done[2] = {false, a < 0};
+        bool failed = false;
+        while (!(done[0] && done[1]) && av_read_frame(in.get(), pkt.get()) >= 0) {
+            const int slot = pkt->stream_index == v ? 0 : pkt->stream_index == a ? 1 : -1;
+            if (slot < 0 || done[slot] || (pkt->dts == AV_NOPTS_VALUE && pkt->pts == AV_NOPTS_VALUE)) {
+                av_packet_unref(pkt.get());
+                continue;
+            }
+            if (pkt->dts == AV_NOPTS_VALUE) pkt->dts = pkt->pts;
+            if (pkt->pts == AV_NOPTS_VALUE) pkt->pts = pkt->dts;
+            const AVRational tb = in->streams[pkt->stream_index]->time_base;
+            const int64_t ptsUs = av_rescale_q(pkt->pts, tb, AV_TIME_BASE_Q) - originUs;
+            const int64_t dtsUs = av_rescale_q(pkt->dts, tb, AV_TIME_BASE_Q) - originUs;
+            if (ptsUs > endUs) {
+                done[slot] = true;
+                av_packet_unref(pkt.get());
+                continue;
+            }
+            if (baseUs == AV_NOPTS_VALUE) {
+                if (slot != 0 || !(pkt->flags & AV_PKT_FLAG_KEY)) {
+                    av_packet_unref(pkt.get());
+                    continue;
+                }
+                baseUs = dtsUs;
+            }
+            const int64_t base = av_rescale_q(baseUs + originUs, AV_TIME_BASE_Q, tb);
+            pkt->pts -= base;
+            pkt->dts -= base;
+            if (pkt->dts < 0) {
+                av_packet_unref(pkt.get());
+                continue;
+            }
+            if (!writer.write(slot, pkt.get(), tb)) {
+                r.error = QStringLiteral("gravar: %1").arg(writer.lastError());
+                failed = true;
+                av_packet_unref(pkt.get());
+                break;
+            }
+            av_packet_unref(pkt.get());
+        }
+        ok = !failed && writer.finish(&r.error);
+        if (baseUs != AV_NOPTS_VALUE)
+            r.startOffset = baseUs / double(AV_TIME_BASE);
+    }
+    if (!ok) {
+        QFile::remove(output);
+        return r;
+    }
+    r.ok = true;
+    r.duration = duration(output);
+    return r;
+}
+
+} // namespace aeonis::Media

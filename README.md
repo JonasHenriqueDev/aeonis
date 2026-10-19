@@ -9,74 +9,76 @@ Outplayed. Sem Overwolf, sem conta, sem nuvem, sem telemetria.
   **Counter-Strike 2** (abates, double/triple/quadra kill, ace), usando as APIs oficiais locais dos jogos.
 - **Detecção automática** de mais de 20 jogos (+ jogos personalizados): começa a gravar quando o jogo abre
   e para quando fecha.
-- **Biblioteca** com miniaturas agrupadas por jogo, corte rápido sem re-encode e exclusão para a lixeira.
-- Áudio do sistema e microfone (WASAPI), limite de armazenamento, iniciar com o Windows.
+- **Biblioteca** no estilo do Outplayed: partidas por dia, clipes por jogo, player com os eventos marcados na
+  linha do tempo, corte sem re-encode, ★ para proteger vídeos e exclusão para a lixeira.
+- Áudio do sistema e microfone (WASAPI), limite de armazenamento, iniciar com o Windows, atualização automática.
 
 ## Download
 Baixe **`Aeonis-Setup-x.y.z.exe`** em [Releases](https://github.com/JonasHenriqueDev/aeonis/releases/latest),
-instale e jogue. O instalador já traz tudo (runtime .NET e FFmpeg) e não pede administrador.
-Também existe uma versão `portable.zip`: é só extrair e abrir o `Aeonis.exe`.
+instale e jogue. O instalador (~29 MB) já traz tudo — Qt, FFmpeg e o runtime do Visual C++ — e não pede
+administrador. Também há o `Aeonis-x.y.z-portable.zip` e o `Aeonis-Portable-x.y.z.exe` (arquivo único).
 
 > Como o executável ainda não tem assinatura digital, o Windows SmartScreen pode avisar na primeira vez:
 > clique em **Mais informações → Executar assim mesmo**.
 
 Depois de instalado, o Aeonis fica no ícone da bandeja (perto do relógio). Abra um jogo e use **Alt+F10**
-para salvar os últimos 30 s ou **Alt+F9** para iniciar/parar uma gravação. Dê dois cliques no ícone para abrir a biblioteca.
+para salvar os últimos 30 s ou **Alt+F9** para iniciar/parar uma gravação. Clique no ícone para abrir a biblioteca.
+
+Quem usava a versão anterior (C#) pode instalar por cima: configurações, histórico e vídeos continuam.
 
 ## Por que é leve
 
 | | |
 |---|---|
-| Captura | `ddagrab` (Desktop Duplication API): o frame nunca sai da GPU |
-| Encode | NVENC / AMF / Quick Sync com frames D3D11 direto (zero-copy) |
-| Buffer | segmentos de 2 s em disco, não um buffer gigante em RAM |
-| Clipes | concatenação `-c copy` — sem re-encode, salva em ~1 s |
-| App | bandeja do sistema em WinForms, ~40 MB de RAM, sem navegador embutido |
+| Captura | DXGI Desktop Duplication própria: o quadro nunca sai da GPU |
+| Encode | NVENC / AMF recebem a textura D3D11 direto (zero-copy); Quick Sync e x264 como alternativa |
+| Buffer | segmentos MPEG-TS de 2 s em disco, não um buffer gigante em RAM |
+| Clipes | concatenação sem re-encode dentro do processo (libavformat), salva em ~0,25 s |
+| App | C++20 + Qt 6; a janela (QML) só existe enquanto está aberta e é destruída ao fechar |
 
-Medido numa RTX 2060, 1080p60 a 20 Mbps: FFmpeg ~4% de **um** núcleo de CPU (≈0,2% do total em 20 threads).
+Tudo roda num processo só: sem `ffmpeg.exe`, sem .NET, sem WebView2.
 
 ## Compilar a partir do código
-Requisitos: Windows 10/11 x64, .NET 8 SDK, FFmpeg 6.1+ com `ddagrab` (`scripts\get-ffmpeg.ps1`) e,
-para o instalador, Inno Setup 6.
+Requisitos: Windows 10/11 x64, Visual Studio 2022 ou 2026 (C++), Qt 6.8+ para MSVC (com Qt Multimedia),
+[vcpkg](https://github.com/microsoft/vcpkg) e, para o instalador, Inno Setup 6.
 
 ```bash
-dotnet build src/Aeonis -c Release
+powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -QtDir C:\Qt\6.11.3\msvc2022_64 -Vcpkg D:\Dev\vcpkg
 ```
+O `build.ps1` instala o FFmpeg pelo manifesto `vcpkg.json` (avcodec/avformat com NVENC, AMF, QSV e x264),
+compila e roda os testes. Para gerar o instalador, o ZIP e o exe portátil em `dist\`:
 ```bash
-powershell -ExecutionPolicy Bypass -File scripts/get-ffmpeg.ps1
+powershell -ExecutionPolicy Bypass -File scripts/package.ps1
 ```
+Teste de ponta a ponta sem interface (grava, salva um clipe e uma gravação longa):
 ```bash
-powershell -ExecutionPolicy Bypass -File scripts/publish.ps1
+build/Release/Aeonis.exe --selftest --seconds 10
 ```
-O executável fica em `dist\Aeonis.exe`. Para gerar o instalador e o zip portable da release:
-```bash
-powershell -ExecutionPolicy Bypass -File scripts/release.ps1
-```
-Teste de ponta a ponta sem UI:
-```bash
-dist/Aeonis.exe --selftest --seconds 10
-```
-(o resultado vai para `%LOCALAPPDATA%\Aeonis\selftest.txt`).
+(o resultado vai para `%LOCALAPPDATA%\Aeonis\selftest.txt`; `--encoder CpuX264`, `--no-audio` e `--mic` também valem).
 
 ## Arquitetura
 ```
-src/Aeonis
-├─ Capture/CaptureEngine.cs  um ffmpeg por sessão: ddagrab → encoder HW → segmentos .ts de 2 s
-├─ Capture/AudioPipe.cs      WASAPI loopback/mic → named pipe → ffmpeg (preenche silêncio)
-├─ Capture/Encoders.cs       detecção NVENC > AMF > QSV > x264
-├─ Capture/Highlighter.cs    junta eventos próximos num só clipe
-├─ Games/GameWatcher.cs      detecção de jogos por processo
-├─ Games/EventSources.cs     LoL Live Client Data API, CS2 Game State Integration
-└─ UI/                       bandeja, biblioteca, corte, configurações (PropertyGrid)
+src/
+├─ main.cpp                  instância única, bandeja, --selftest
+├─ core/                     Paths, Log, Settings (settings.json), Library (library.jsonl), Media (libav), MediaCache
+├─ capture/                  DesktopDuplication, Encoders, SegmentWriter, CaptureEngine, Clips (nomes, ★, limite)
+├─ audio/                    AudioCapture (WASAPI loopback/microfone), AudioMixer (silêncio, mixagem, AAC)
+├─ games/                    GameCatalog, GameWatcher, Highlighter, EventSources (LoL, CS2)
+├─ app/                      App (controlador), TrayIcon, Hotkeys, SoundEffects, AutoUpdater, WindowHost
+└─ ui/                       Backend (objeto do QML), LibraryModel, SettingsSchema
+qml/                         Main, Sidebar, MatchesView, ClipsView, Player, SettingsView, Theme…
+tests/                       Qt Test: configurações e histórico da versão C#, destaques, LoL/CS2, atalhos,
+                             limite de armazenamento e segmentos → MP4 → corte
 ```
-Dados do app: `%LOCALAPPDATA%\Aeonis` (configurações, log, buffer, miniaturas). Vídeos: `Vídeos\Aeonis\<Jogo>`.
+Dados do app: `%LOCALAPPDATA%\Aeonis` (configurações, log, buffer, miniaturas, histórico). Vídeos: `Vídeos\Aeonis\<Jogo>`.
 Gravações longas interrompidas por crash/queda de energia são recuperadas na próxima abertura.
+O plano da migração para C++ está em [docs/PLANO_CPP.md](docs/PLANO_CPP.md).
 
 ## Limitações
 - Jogos em **tela cheia exclusiva** antiga (DX9) podem aparecer pretos no Desktop Duplication; use modo
   janela sem bordas (a maioria dos jogos DX11/12 no Windows 10/11 funciona normalmente).
-- Gravação na resolução nativa do monitor (sem redimensionamento, para manter tudo na GPU).
-- Em PCs com vários monitores o índice do DXGI pode diferir da ordem do Windows; fixe-o em Configurações.
+- Grava na resolução do monitor no início da sessão; se o jogo trocar a resolução, a imagem é redimensionada na GPU.
+- Monitor girado (retrato) ainda não é corrigido; monitores HDR são gravados em SDR (8 bits).
 - Destaques automáticos só em LoL e CS2 (os demais jogos não oferecem API pública de eventos).
 - Ao abrir o CS2 pela primeira vez, o Aeonis instala `gamestate_integration_aeonis.cfg`; reinicie o jogo uma vez.
 
@@ -87,5 +89,5 @@ contém código nem assets do Outplayed/Overwolf. "Outplayed" é marca de seus r
 ## Licença
 [GPL-3.0-or-later](LICENSE). Você pode usar, estudar, modificar e redistribuir o Aeonis à vontade; quem
 distribuir uma versão modificada precisa publicar o código dela sob a mesma licença. Assim o projeto não
-pode virar um gravador fechado e cheio de anúncios. O FFmpeg é um programa separado (LGPL/GPL) executado
-como processo externo.
+pode virar um gravador fechado e cheio de anúncios. O FFmpeg (GPL, com x264) é linkado no `Aeonis.exe`;
+as licenças de todas as dependências vão na pasta `licenses` da instalação.

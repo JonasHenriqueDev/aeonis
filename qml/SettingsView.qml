@@ -1,0 +1,171 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import "Format.js" as F
+
+// Configurações geradas a partir do esquema (SettingsSchema.cpp), agrupadas por categoria,
+// com a barra "alterações não salvas". Inclui armazenamento e atualizações.
+Item {
+    id: page
+    property var dirty: ({})
+    readonly property int dirtyCount: Object.keys(dirty).length
+    readonly property var categories: {
+        const out = []
+        for (const f of App.settingsFields) {
+            let c = out.find(x => x.name === f.category)
+            if (!c) out.push(c = { name: f.category, fields: [] })
+            c.fields.push(f)
+        }
+        return out
+    }
+    function valueOf(f) { return f.key in dirty ? dirty[f.key] : f.value }
+    function mark(f, v) {
+        const d = Object.assign({}, dirty)
+        if (v === f.value) delete d[f.key]
+        else d[f.key] = v
+        dirty = d
+    }
+
+    Connections {
+        target: App
+        function onSettingsChanged() { page.dirty = ({}) }
+    }
+
+    PageHeader {
+        id: header
+        anchors { left: parent.left; right: parent.right; top: parent.top; margins: 28 }
+        title: "Configurações"
+        subtitle: "Gravação, clipes, áudio e atalhos"
+        actions: false
+    }
+
+    ScrollView {
+        id: scroll
+        anchors { left: parent.left; right: parent.right; top: header.bottom; bottom: saveBar.visible ? saveBar.top : parent.bottom; topMargin: 16 }
+        contentWidth: availableWidth
+        clip: true
+
+        ColumnLayout {
+            width: Math.min(scroll.availableWidth - 56, 980)
+            x: 28
+            spacing: 16
+
+            Repeater {
+                model: page.categories
+                delegate: Rectangle {
+                    id: card
+                    required property var modelData
+                    Layout.fillWidth: true
+                    implicitHeight: col.implicitHeight + 28
+                    radius: Theme.radius
+                    color: Theme.panel
+                    border.color: Theme.line
+                    ColumnLayout {
+                        id: col
+                        anchors { left: parent.left; right: parent.right; top: parent.top; margins: 18; topMargin: 14 }
+                        spacing: 0
+                        Text { text: card.modelData.name; color: Theme.text; font.pixelSize: 16; font.weight: Font.DemiBold; Layout.bottomMargin: 6 }
+                        Repeater {
+                            model: card.modelData.fields
+                            delegate: ColumnLayout {
+                                required property var modelData
+                                required property int index
+                                Layout.fillWidth: true
+                                spacing: 0
+                                Rectangle { visible: index > 0; Layout.fillWidth: true; height: 1; color: Theme.line }
+                                SettingRow {
+                                    Layout.fillWidth: true
+                                    field: modelData
+                                    value: page.valueOf(modelData)
+                                    onEdited: v => page.mark(modelData, v)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Armazenamento
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: storage.implicitHeight + 32
+                radius: Theme.radius
+                color: Theme.panel
+                border.color: Theme.line
+                ColumnLayout {
+                    id: storage
+                    anchors { left: parent.left; right: parent.right; top: parent.top; margins: 18 }
+                    spacing: 8
+                    Text { text: "Armazenamento"; color: Theme.text; font.pixelSize: 16; font.weight: Font.DemiBold }
+                    Text {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        color: Theme.muted
+                        font.pixelSize: 13
+                        text: "Vídeos: " + F.size(App.library.totalBytes || 0) + " no total, "
+                              + F.size(App.library.unsavedBytes || 0) + " não salvos (contam para o limite)."
+                    }
+                    RowLayout {
+                        AButton { text: "Abrir pasta dos vídeos"; iconName: "folder"; onClicked: App.openFolder() }
+                        AButton { text: "Abrir log"; iconName: "external"; onClicked: App.openLog() }
+                    }
+                }
+            }
+
+            // Atualizações
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.bottomMargin: 28
+                implicitHeight: updates.implicitHeight + 32
+                radius: Theme.radius
+                color: Theme.panel
+                border.color: Theme.line
+                ColumnLayout {
+                    id: updates
+                    anchors { left: parent.left; right: parent.right; top: parent.top; margins: 18 }
+                    spacing: 8
+                    Text { text: "Sobre e atualizações"; color: Theme.text; font.pixelSize: 16; font.weight: Font.DemiBold }
+                    Text {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        color: Theme.muted
+                        font.pixelSize: 13
+                        text: "Aeonis " + App.updater.version + " · software livre (GPL-3.0-or-later). " + App.updater.status
+                    }
+                    RowLayout {
+                        AButton { text: "Verificar agora"; iconName: "refresh"; enabled: !App.updater.busy; onClicked: App.updater.check() }
+                        AButton {
+                            visible: App.updater.available
+                            text: "Baixar e instalar " + App.updater.newVersion
+                            iconName: "download"
+                            primary: true
+                            enabled: !App.updater.busy
+                            onClicked: App.updater.downloadAndInstall()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        id: saveBar
+        visible: page.dirtyCount > 0
+        anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+        height: 60
+        color: Theme.side
+        Rectangle { width: parent.width; height: 1; color: Theme.line }
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 28
+            anchors.rightMargin: 28
+            Text {
+                Layout.fillWidth: true
+                color: Theme.text
+                text: page.dirtyCount === 1 ? "1 alteração não salva" : page.dirtyCount + " alterações não salvas"
+            }
+            AButton { text: "Descartar"; onClicked: page.dirty = ({}) }
+            AButton { text: "Salvar alterações"; primary: true; onClicked: App.saveSettings(page.dirty) }
+        }
+    }
+}

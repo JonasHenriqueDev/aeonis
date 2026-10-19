@@ -1,0 +1,11 @@
+{
+  "name": "aeonis",
+  "version-string": "1.0.0",
+  "dependencies": [
+    {
+      "name": "ffmpeg",
+      "default-features": false,
+      "features": ["avcodec", "avformat", "swresample", "swscale", "nvcodec", "amf", "qsv", "x264", "gpl"]
+    }
+  ]
+}

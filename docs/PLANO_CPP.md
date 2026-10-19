@@ -155,18 +155,18 @@ Cada fase termina com algo que roda e pode ser testado.
   release 1.0.0.
 
 ### Checklist de paridade
-- [ ] Modos Destaques e Partida completa
-- [ ] Buffer sempre ligado (opcional), duração do replay, pré/pós do clipe
-- [ ] Escolha de encoder, FPS, bitrate, monitor, cursor
-- [ ] Áudio do sistema, microfone e dispositivo
-- [ ] Destaques automáticos: abates, mortes e assistências opcionais (LoL, CS2)
-- [ ] Jogos personalizados
-- [ ] Atalhos configuráveis
-- [ ] Limite de armazenamento com vídeos protegidos
-- [ ] Recuperação após crash ou queda de energia
-- [ ] Biblioteca, player, recorte, abrir pasta, mostrar no Explorer, excluir
-- [ ] Iniciar com o Windows, som de notificação, abrir log
-- [ ] `--selftest`
+- [x] Modos Destaques e Partida completa
+- [x] Buffer sempre ligado (opcional), duração do replay, pré/pós do clipe
+- [x] Escolha de encoder, FPS, bitrate, monitor, cursor
+- [x] Áudio do sistema, microfone e dispositivo
+- [x] Destaques automáticos: abates, mortes e assistências opcionais (LoL, CS2)
+- [x] Jogos personalizados
+- [x] Atalhos configuráveis
+- [x] Limite de armazenamento com vídeos protegidos
+- [x] Recuperação após crash ou queda de energia
+- [x] Biblioteca, player, recorte, abrir pasta, mostrar no Explorer, excluir
+- [x] Iniciar com o Windows, som de notificação, abrir log
+- [x] `--selftest`
 
 ## 6. Riscos
 
@@ -206,3 +206,27 @@ código-fonte da versão distribuída (o repositório no GitHub + a tag da relea
 - Editor de vídeo além do recorte.
 - Linux/macOS (o Qt permitiria, mas a captura é DXGI/WASAPI).
 - Overlay dentro do jogo.
+
+## 9. Estado da implementação (19/10/2026)
+
+Implementado em uma passada (F0–F7), com o C# removido e a versão 1.0.0 empacotada. Diferenças em relação ao plano:
+- A estrutura ficou na raiz (sem a fase intermediária em `native/`).
+- O gravador de segmentos é próprio (`SegmentWriter`, um muxer MPEG-TS por arquivo, trocando no keyframe de 2 s)
+  em vez do muxer `segment`: o mesmo resultado, com controle de quando o arquivo muda.
+- Quick Sync usa o caminho pela CPU (cópia + conversão para NV12) em vez de `hwmap`; NVENC e AMF são zero-copy.
+- Mudança de resolução no meio da sessão é redimensionada na GPU (ID3D11VideoProcessor), para os segmentos
+  continuarem concatenáveis.
+- O atualizador é enxuto (GitHub Releases → instalador silencioso com `/UPDATE=1`), não o `AutoUpdater` do OpenSpeak.
+- Os ícones da bandeja/janela são os de `assets/icons` (novo design).
+
+Medido nesta máquina (RTX 2060, 1080p60, 20 Mbps):
+- `--selftest` passa com NVENC (sistema + microfone) e com x264; clipe de 8 s salvo em 0,24 s.
+- Instalador: 28,8 MB (meta ≤ 40 MB).
+- Processo com captura ativa: ~104 MB de working set, incluindo o driver NVIDIA/NVENC que antes ficava no
+  `ffmpeg.exe` separado.
+
+Ainda falta verificar (precisa de jogo/hardware/ambiente reais):
+- RAM na bandeja sem jogo e depois de fechar a janela (metas ≤ 15 MB / ≤ 20 MB).
+- Instalação no Windows Sandbox limpo e atualização por cima de uma instalação C# real.
+- Partida de LoL e de CS2 gerando destaques sozinhas; gravação de 30 min sem dessincronia.
+- AMF (AMD) e Quick Sync (Intel) em hardware real.

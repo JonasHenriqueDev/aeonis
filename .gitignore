@@ -1,7 +1,6 @@
-bin/
-obj/
+build/
 dist/
+vcpkg_installed/
 *.user
 .vs/
-ffmpeg.exe
 .mcp.json

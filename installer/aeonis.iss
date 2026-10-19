@@ -1,9 +1,10 @@
-; Instalador do Aeonis (Inno Setup 6). Gerado por scripts\release.ps1, que define AppVersion e StageDir.
+; Instalador do Aeonis (Inno Setup 6). Gerado por scripts\package.ps1, que define AppVersion e StageDir.
+; Mesmo AppId da versão C#: instalar por cima atualiza no lugar e mantém configurações, histórico e vídeos.
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
 #ifndef StageDir
-  #define StageDir "..\dist\stage"
+  #define StageDir "..\dist\Aeonis"
 #endif
 
 [Setup]
@@ -15,6 +16,7 @@ AppPublisher=Aeonis contributors
 AppPublisherURL=https://github.com/JonasHenriqueDev/aeonis
 AppSupportURL=https://github.com/JonasHenriqueDev/aeonis/issues
 AppUpdatesURL=https://github.com/JonasHenriqueDev/aeonis/releases
+VersionInfoVersion={#AppVersion}
 ; Instalação por usuário: não pede administrador.
 PrivilegesRequired=lowest
 DefaultDirName={localappdata}\Programs\Aeonis
@@ -31,9 +33,11 @@ SolidCompression=yes
 LZMAUseSeparateProcess=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-MinVersion=10.0
+MinVersion=10.0.19041
 WizardStyle=modern
 AppMutex=Aeonis.SingleInstance
+; O app não abre enquanto este mutex existe (exceto o relançamento com --after-update).
+SetupMutex=AeonisSetupMutex
 CloseApplications=yes
 
 [Languages]
@@ -43,6 +47,17 @@ Name: "en"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 Name: "autostart"; Description: "Iniciar o Aeonis junto com o Windows (recomendado)"; GroupDescription: "Inicialização:"
+
+[InstallDelete]
+; Restos da versão C# (.NET + ffmpeg.exe): tudo que não faz parte desta versão.
+Type: files; Name: "{app}\ffmpeg.exe"
+Type: files; Name: "{app}\FFMPEG-*.txt"
+Type: files; Name: "{app}\Aeonis.dll"
+Type: files; Name: "{app}\Aeonis.deps.json"
+Type: files; Name: "{app}\Aeonis.runtimeconfig.json"
+Type: files; Name: "{app}\createdump.exe"
+Type: files; Name: "{app}\*.dll"
+Type: filesandordirs; Name: "{app}\qml"
 
 [Files]
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -59,9 +74,18 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: 
   Flags: uninsdeletevalue dontcreatekey
 
 [Run]
-Filename: "{app}\Aeonis.exe"; Description: "{cm:LaunchProgram,Aeonis}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Aeonis.exe"; Parameters: "--after-update"; Description: "{cm:LaunchProgram,Aeonis}"; Flags: nowait postinstall skipifsilent
+; Atualização automática (instalador silencioso com /UPDATE=1): reabre na bandeja.
+Filename: "{app}\Aeonis.exe"; Parameters: "--after-update --minimized"; Flags: nowait runasoriginaluser; Check: IsUpdate
 
 [UninstallDelete]
 ; Remove só caches/buffer; configurações e vídeos do usuário são preservados.
 Type: filesandordirs; Name: "{localappdata}\Aeonis\buffer"
 Type: filesandordirs; Name: "{localappdata}\Aeonis\thumbs"
+Type: filesandordirs; Name: "{localappdata}\Aeonis\webview"
+
+[Code]
+function IsUpdate(): Boolean;
+begin
+  Result := ExpandConstant('{param:UPDATE|0}') = '1';
+end;
