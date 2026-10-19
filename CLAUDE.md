@@ -13,7 +13,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   `gh release create vx.y.z --title "Aeonis x.y.z"` anexando os três arquivos de `dist\`
   (`Aeonis-Setup-x.y.z.exe`, `Aeonis-x.y.z-portable.zip`, `Aeonis-Portable-x.y.z.exe`) e notas em pt-BR no
   formato das anteriores (Download, Novidades). A atualização automática do app depende do
-  `Aeonis-Setup-*.exe` na release mais recente.
+  `Aeonis-Setup-*.exe` na release mais recente, e o `package.ps1` recusa empacotar se o `Aeonis.exe` não se
+  apresentar com a versão do pacote (isso já causou um loop de atualização na 1.1.0).
 
 ## Comandos
 

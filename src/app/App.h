@@ -22,6 +22,7 @@
 namespace aeonis {
 
 class AutoUpdater;
+class UpdateSplash;
 class Backend;
 class EventSource;
 class GameWatcher;
@@ -90,6 +91,8 @@ private:
     AutoUpdater *m_updater = nullptr;
     Backend *m_backend = nullptr;
     WindowHost *m_window = nullptr;
+    UpdateSplash *m_splash = nullptr;
+    bool m_windowBeforeUpdate = false; // reabre a janela se a atualização falhar
     std::optional<GameDef> m_activeGame;
     bool m_starting = false;
     bool m_exiting = false;
