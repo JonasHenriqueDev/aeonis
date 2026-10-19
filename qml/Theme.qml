@@ -1,7 +1,7 @@
 pragma Singleton
 import QtQuick
 
-// Cores do Aeonis (as mesmas da interface web anterior) sobre o estilo FluentWinUI3 escuro.
+// Cores da marca Aeonis (violeta -> azul -> ciano) sobre o estilo FluentWinUI3 escuro.
 QtObject {
     readonly property color bg: "#0e0f13"
     readonly property color side: "#121319"
@@ -12,10 +12,10 @@ QtObject {
     readonly property color text: "#ecebf3"
     readonly property color muted: "#8d8fa1"
     readonly property color faint: "#5d5f70"
-    readonly property color accent: "#8b5cf6"
-    readonly property color accent2: "#0ea5e9"
+    readonly property color accent: "#8b3dff"
+    readonly property color accent2: "#2563eb"
     readonly property color gradA: "#7c3aed"
-    readonly property color gradB: "#0ea5e9"
+    readonly property color gradB: "#22e5f5"
     readonly property color kill: "#f43f5e"
     readonly property color multi: "#f59e0b"
     readonly property color obj: "#a855f7"
