@@ -22,6 +22,10 @@ if (-not $SkipBuild) {
     if ($LASTEXITCODE) { Write-Error 'build/testes falharam'; exit 1 }
 }
 
+# O exe precisa se apresentar com a versão do pacote; senão a atualização automática entra em loop.
+$exeVersion = (Get-Item (Join-Path $release 'Aeonis.exe')).VersionInfo.ProductVersion
+if ($exeVersion -ne $version) { Write-Error "Aeonis.exe diz ser $exeVersion, mas o pacote é $version (recompile)"; exit 1 }
+
 $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
 $crt = Get-ChildItem (Join-Path $vs 'VC\Redist\MSVC') -Directory | Sort-Object Name -Descending |
     ForEach-Object { Get-ChildItem (Join-Path $_.FullName 'x64') -Directory -Filter 'Microsoft.VC*.CRT' -ErrorAction SilentlyContinue } |

@@ -2,6 +2,7 @@
 #include "AutoUpdater.h"
 #include "Hotkeys.h"
 #include "TrayIcon.h"
+#include "UpdateSplash.h"
 #include "WindowHost.h"
 #include "capture/Clips.h"
 #include "capture/Monitors.h"
@@ -71,6 +72,19 @@ App::App(bool minimized, QObject *parent) : QObject(parent), m_settings(Settings
                QStringLiteral("O Aeonis %1 está disponível. Abra Sobre para instalar.").arg(version));
     });
     connect(m_updater, &AutoUpdater::installerLaunched, this, &App::exit);
+    // Tela de atualização (logo + progresso) no lugar da janela enquanto baixa e instala.
+    m_splash = new UpdateSplash(m_updater, this);
+    connect(m_updater, &AutoUpdater::installStarted, this, [this] {
+        m_windowBeforeUpdate = m_window->isOpen();
+        m_window->close();
+        m_splash->show();
+    });
+    connect(m_updater, &AutoUpdater::installFailed, this, [this](const QString &reason) {
+        m_splash->close();
+        notify(QStringLiteral("Falha na atualização"), reason, QSystemTrayIcon::Critical);
+        if (m_windowBeforeUpdate)
+            showWindow(QStringLiteral("about"));
+    });
 
     // Envio ao YouTube: vive no App para continuar com a janela fechada. YouTubeClientId/Secret no
     // settings.json trocam o cliente OAuth embutido (para quem usa um projeto próprio no Google Cloud).
@@ -174,9 +188,12 @@ void App::installUpdateIfIdle()
     if (!m_settings.autoUpdate || m_exiting || !m_updater->available() || m_updater->busy()
         || m_activeGame || m_engine.recording())
         return;
+    if (m_updater->recentlyTried(m_updater->newVersion())) {
+        Log::error(QStringLiteral("Atualização para %1 já foi tentada e o app continua na %2; não tenta de novo sozinho.")
+                       .arg(m_updater->newVersion(), m_updater->version()));
+        return;
+    }
     Log::info(QStringLiteral("Atualização automática para %1").arg(m_updater->newVersion()));
-    if (m_window->isOpen())
-        emit m_backend->toast(QStringLiteral("Atualizando para a versão %1…").arg(m_updater->newVersion()), QStringLiteral("info"));
     m_updater->downloadAndInstall(m_window->isOpen());
 }
 

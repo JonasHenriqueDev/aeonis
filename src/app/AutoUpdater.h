@@ -18,6 +18,7 @@ class AutoUpdater : public QObject {
     Q_PROPERTY(bool busy READ busy NOTIFY changed)
     Q_PROPERTY(bool available READ available NOTIFY changed)
     Q_PROPERTY(QString newVersion READ newVersion NOTIFY changed)
+    Q_PROPERTY(qreal progress READ progress NOTIFY changed) // 0..1 no download; -1 = indeterminado
 public:
     static constexpr const char *Repository = "JonasHenriqueDev/aeonis";
 
@@ -28,6 +29,11 @@ public:
     bool busy() const { return m_busy; }
     bool available() const { return !m_assetUrl.isEmpty(); }
     QString newVersion() const { return m_newVersion; }
+    qreal progress() const { return m_progress; }
+
+    /// Já tentou instalar esta versão há pouco e o app continua na antiga (instalador falhou ou
+    /// pacote com versão errada): não tenta sozinho de novo, para não entrar em loop.
+    bool recentlyTried(const QString &version) const;
 
     /// Verificação automática: logo ao abrir e a cada 24 h.
     void setAutomatic(bool enabled);
@@ -42,11 +48,15 @@ public:
 signals:
     void changed();
     void updateFound(const QString &version);
+    /// Download começou (a tela de atualização aparece) / falhou (ela some).
+    void installStarted();
+    void installFailed(const QString &reason);
     /// O instalador foi iniciado: o app precisa encerrar (salvando a gravação em andamento).
     void installerLaunched();
 
 private:
     void setStatus(const QString &status, bool busy);
+    void fail(const QString &reason);
 
     QNetworkAccessManager m_net;
     QPointer<QNetworkReply> m_reply;
@@ -55,6 +65,7 @@ private:
     QString m_newVersion;
     QString m_assetUrl;
     QString m_assetName;
+    qreal m_progress = -1;
     bool m_busy = false;
     bool m_notified = false;
 };
