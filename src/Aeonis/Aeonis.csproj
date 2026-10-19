@@ -25,6 +25,12 @@
 
   <ItemGroup>
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2792.45" />
+  </ItemGroup>
+
+  <!-- Interface (biblioteca/player/configurações) embutida no executável e servida em https://app.aeonis/ -->
+  <ItemGroup>
+    <EmbeddedResource Include="Web\*" LogicalName="web/%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>

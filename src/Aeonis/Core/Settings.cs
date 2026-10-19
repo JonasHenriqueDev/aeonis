@@ -7,9 +7,21 @@ using Microsoft.Win32;
 
 namespace Aeonis.Core;
 
-public enum CaptureMode { Destaques, PartidaCompleta }
+public enum CaptureMode
+{
+    [Description("Somente destaques")] Destaques,
+    [Description("Partida completa + destaques")] PartidaCompleta,
+}
 
-public enum EncoderChoice { Auto, NvidiaH264, NvidiaHevc, AmdH264, IntelH264, CpuX264 }
+public enum EncoderChoice
+{
+    [Description("Automático (recomendado)")] Auto,
+    [Description("NVIDIA NVENC H.264")] NvidiaH264,
+    [Description("NVIDIA NVENC HEVC (H.265)")] NvidiaHevc,
+    [Description("AMD AMF H.264")] AmdH264,
+    [Description("Intel Quick Sync H.264")] IntelH264,
+    [Description("CPU x264 (pesado)")] CpuX264,
+}
 
 public sealed class Settings
 {
@@ -21,7 +33,7 @@ public sealed class Settings
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "Aeonis");
 
     [Category("1. Gravação"), DisplayName("Modo")]
-    [Description("Destaques: mantém só um buffer curto e salva clipes. PartidaCompleta: grava a partida inteira e também gera os clipes de destaque.")]
+    [Description("Somente destaques: mantém só um buffer curto e salva clipes. Partida completa: grava a partida inteira e também gera os clipes de destaque.")]
     public CaptureMode Mode { get; set; } = CaptureMode.Destaques;
 
     [Category("1. Gravação"), DisplayName("Encoder de vídeo")]

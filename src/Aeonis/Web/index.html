@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aeonis</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <aside class="side">
+    <div class="brand">
+      <div class="logo">A</div>
+      <div>
+        <div class="brand-name">Aeonis</div>
+        <div class="brand-sub">gravador de gameplay</div>
+      </div>
+    </div>
+
+    <nav class="tabs" id="tabs">
+      <button data-view="matches"><i data-icon="trophy"></i>Partidas</button>
+      <button data-view="clips"><i data-icon="film"></i>Clipes</button>
+    </nav>
+
+    <div class="side-title">Jogos</div>
+    <nav class="games" id="games"></nav>
+
+    <div class="side-bottom">
+      <button class="side-link" data-view="settings"><i data-icon="gear"></i>Configurações</button>
+      <div class="status" id="status"></div>
+    </div>
+  </aside>
+
+  <main class="main" id="main"></main>
+  <section class="player hidden" id="player"></section>
+  <div class="toasts" id="toasts"></div>
+  <div class="modal hidden" id="modal"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

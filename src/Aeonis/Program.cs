@@ -15,7 +15,8 @@ static class Program
         using var mutex = new Mutex(true, "Aeonis.SingleInstance", out bool first);
         if (!first)
         {
-            MessageBox.Show("O Aeonis já está em execução (veja o ícone na bandeja do sistema).", "Aeonis");
+            // Já está rodando: pede para a instância existente mostrar a janela.
+            if (EventWaitHandle.TryOpenExisting(TrayApp.ShowSignalName, out var signal)) using (signal) signal.Set();
             return 0;
         }
 

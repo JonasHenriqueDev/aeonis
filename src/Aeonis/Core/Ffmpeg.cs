@@ -72,11 +72,4 @@ static class Ffmpeg
         return int.Parse(m.Groups[1].Value) * 3600 + int.Parse(m.Groups[2].Value) * 60
              + double.Parse(m.Groups[3].Value, CultureInfo.InvariantCulture);
     }
-
-    public static async Task ThumbnailAsync(string video, string jpg)
-    {
-        var (code, _) = await RunAsync($"-hide_banner -loglevel error -ss 2 -i {Q(video)} -frames:v 1 -vf scale=320:-2 -q:v 5 -y {Q(jpg)}", 30_000).ConfigureAwait(false);
-        if (code != 0 || !File.Exists(jpg))
-            await RunAsync($"-hide_banner -loglevel error -i {Q(video)} -frames:v 1 -vf scale=320:-2 -q:v 5 -y {Q(jpg)}", 30_000).ConfigureAwait(false);
-    }
 }

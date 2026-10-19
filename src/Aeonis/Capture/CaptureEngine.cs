@@ -39,6 +39,8 @@ sealed class CaptureEngine
     public bool Running => segmentDir != null;
     public bool IsRecording => pinStart != null;
     public string Game { get; private set; } = "Desktop";
+    /// <summary>Identifica a sessão (partida) atual no histórico da biblioteca; mantido após o Stop.</summary>
+    public string SessionId { get; private set; } = "";
     public string EncoderLabel => encoder?.Label ?? "-";
     public DateTime? RecordingSince { get; private set; }
 
@@ -53,6 +55,7 @@ sealed class CaptureEngine
         {
             if (Running) return;
             Game = game;
+            SessionId = Guid.NewGuid().ToString("N")[..12];
             monitor = monitorIndex;
             restarts = 0;
             segmentDir = Path.Combine(Paths.Buffer, DateTime.Now.ToString("yyyyMMdd_HHmmss_fff"));

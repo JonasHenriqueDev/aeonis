@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Media;
+using System.Reflection;
 using Aeonis.Capture;
 using Aeonis.Core;
 using Aeonis.Games;
@@ -9,6 +10,9 @@ namespace Aeonis.UI;
 /// <summary>Aplicativo de bandeja: sem janela aberta, o Aeonis só ocupa um ícone e o processo FFmpeg da sessão.</summary>
 sealed class TrayApp : ApplicationContext
 {
+    public const string ShowSignalName = "Aeonis.ShowWindow";
+    static readonly string Version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0";
+
     Settings settings;
     readonly Control invoker = new();
     readonly NotifyIcon tray;
@@ -20,7 +24,8 @@ sealed class TrayApp : ApplicationContext
     readonly ToolStripMenuItem miStatus, miSave, miRecord;
     IEventSource? events;
     GameDef? activeGame;
-    LibraryForm? library;
+    MainWindow? main;
+    readonly EventWaitHandle showSignal = new(false, EventResetMode.AutoReset, ShowSignalName);
     bool exiting;
 
     public TrayApp(bool minimized)
@@ -31,7 +36,7 @@ sealed class TrayApp : ApplicationContext
 
         engine = new CaptureEngine(() => settings);
         engine.Failed += msg => OnUi(() => { Notify("Aeonis", msg, ToolTipIcon.Error); UpdateUi(); });
-        highlighter = new Highlighter(() => settings, (secs, label) => SaveClipAsync(secs, label));
+        highlighter = new Highlighter(() => settings, (secs, label) => SaveClipAsync(secs, label, "highlight"));
         watcher = new GameWatcher(() => GameCatalog.All(settings));
         watcher.GameStarted += (g, monitor, exe) => _ = OnGameStartedAsync(g, monitor, exe);
         watcher.GameStopped += g => _ = OnGameStoppedAsync(g);
@@ -47,16 +52,17 @@ sealed class TrayApp : ApplicationContext
             miSave,
             miRecord,
             new ToolStripSeparator(),
-            new ToolStripMenuItem("Biblioteca de clipes", null, (_, _) => ShowLibrary()),
+            new ToolStripMenuItem("Abrir Aeonis", null, (_, _) => ShowMain("matches")) { Font = new Font(menu.Font, FontStyle.Bold) },
             new ToolStripMenuItem("Abrir pasta dos vídeos", null, (_, _) => OpenOutputFolder()),
-            new ToolStripMenuItem("Configurações", null, (_, _) => ShowSettings()),
+            new ToolStripMenuItem("Configurações", null, (_, _) => ShowMain("settings")),
             new ToolStripMenuItem("Abrir log", null, (_, _) => OpenLog()),
             new ToolStripSeparator(),
             new ToolStripMenuItem("Sair", null, (_, _) => _ = ExitAsync()),
         ]);
 
         tray = new NotifyIcon { Icon = iconIdle, Text = "Aeonis", Visible = true, ContextMenuStrip = menu };
-        tray.DoubleClick += (_, _) => ShowLibrary();
+        tray.DoubleClick += (_, _) => ShowMain("matches");
+        tray.BalloonTipClicked += (_, _) => ShowMain("matches");
 
         RegisterHotkeys();
         Microsoft.Win32.SystemEvents.SessionEnding += (_, _) => engine.StopAsync().GetAwaiter().GetResult();
@@ -69,14 +75,17 @@ sealed class TrayApp : ApplicationContext
         {
             Log.Info($"FFmpeg: {Ffmpeg.Exe}");
             _ = Task.Run(CaptureEngine.RecoverLeftoversAsync);
-            if (settings.AlwaysOnBuffer) _ = StartEngineAsync("Desktop", Math.Max(0, settings.MonitorIndex));
+            if (settings.AlwaysOnBuffer) _ = StartEngineAsync("Desktop", Math.Max(0, settings.MonitorIndex), null);
         }
         watcher.Start();
         UpdateUi();
+        new Thread(() =>
+        {
+            while (showSignal.WaitOne() && !exiting) OnUi(() => ShowMain("matches"));
+        }) { IsBackground = true, Name = "aeonis-show" }.Start();
 
-        if (!minimized)
-            Notify("Aeonis está na bandeja",
-                $"Abra um jogo e pressione {settings.HotkeySaveClip} para salvar os últimos {settings.ReplaySeconds}s.");
+        // Aberto pelo usuário (atalho/menu Iniciar): mostra a janela. Com o Windows (--minimized): só a bandeja.
+        if (!minimized) ShowMain("matches");
     }
 
     void OnUi(Action action)
@@ -91,10 +100,15 @@ sealed class TrayApp : ApplicationContext
 
     // ---------------- Ciclo de vida da captura ----------------
 
-    async Task StartEngineAsync(string game, int monitor)
+    async Task StartEngineAsync(string game, int monitor, string? exe)
     {
         if (Ffmpeg.Exe == null) { ShowFfmpegMissing(); return; }
-        try { await engine.StartAsync(game, monitor); }
+        try
+        {
+            await engine.StartAsync(game, monitor);
+            Library.SessionStarted(engine.SessionId, game, exe);
+            if (exe != null) _ = Task.Run(() => MediaCache.SaveGameIcon(game, exe));
+        }
         catch (Exception ex)
         {
             Log.Error("Falha ao iniciar captura", ex);
@@ -107,7 +121,7 @@ sealed class TrayApp : ApplicationContext
     {
         activeGame = game;
         if (engine.Running) await StopEngineAndReportAsync();
-        await StartEngineAsync(game.Name, settings.MonitorIndex >= 0 ? settings.MonitorIndex : monitor);
+        await StartEngineAsync(game.Name, settings.MonitorIndex >= 0 ? settings.MonitorIndex : monitor, exe);
         if (!engine.Running) return;
 
         if (settings.Mode == CaptureMode.PartidaCompleta) engine.BeginRecording();
@@ -121,7 +135,11 @@ sealed class TrayApp : ApplicationContext
             };
             if (events != null)
             {
-                events.Highlight += highlighter.Trigger;
+                events.Highlight += reason =>
+                {
+                    Library.Event(engine.SessionId, reason);
+                    highlighter.Trigger(reason);
+                };
                 events.Start();
             }
         }
@@ -137,19 +155,31 @@ sealed class TrayApp : ApplicationContext
         await highlighter.FlushAsync();
         await StopEngineAndReportAsync();
         activeGame = null;
-        if (settings.AlwaysOnBuffer && !exiting) await StartEngineAsync("Desktop", Math.Max(0, settings.MonitorIndex));
+        if (settings.AlwaysOnBuffer && !exiting) await StartEngineAsync("Desktop", Math.Max(0, settings.MonitorIndex), null);
         OnUi(UpdateUi);
     }
 
     async Task StopEngineAndReportAsync()
     {
+        var session = engine.SessionId;
+        var recordingStart = engine.RecordingSince;
+        var requestedAt = DateTime.Now;
+        var wasRunning = engine.Running;
         var recording = await engine.StopAsync();
         if (recording != null)
         {
-            Notify("Gravação salva", Path.GetFileName(recording));
+            await Library.ClipSavedAsync(session, recording, "full", LabelOf(recording), requestedAt, recordingStart);
+            Notify("Partida salva", Path.GetFileName(recording));
             Clips.EnforceQuota(settings.OutputDir, settings.MaxStorageGb);
-            OnUi(() => library?.Reload());
         }
+        if (wasRunning) Library.SessionEnded(session);
+        OnUi(() => main?.RefreshLibrary());
+    }
+
+    static string LabelOf(string path)
+    {
+        var name = Path.GetFileNameWithoutExtension(path);
+        return name.Contains("_Gravação") ? "Gravação" : name.Contains("_Recuperado") ? "Recuperado" : "Partida";
     }
 
     Task SaveManualClipAsync()
@@ -159,40 +189,50 @@ sealed class TrayApp : ApplicationContext
             Notify("Nada sendo gravado", "Abra um jogo ou ative \"Buffer sempre ativo\" nas configurações.", ToolTipIcon.Warning);
             return Task.CompletedTask;
         }
-        return SaveClipAsync(settings.ReplaySeconds, "Clipe");
+        return SaveClipAsync(settings.ReplaySeconds, "Clipe", "manual");
     }
 
-    async Task SaveClipAsync(int seconds, string label)
+    async Task SaveClipAsync(int seconds, string label, string kind)
     {
         if (!engine.Running) return;
+        var session = engine.SessionId;
+        var requestedAt = DateTime.Now;
         var path = await engine.SaveClipAsync(seconds, label);
         if (path == null)
         {
             Notify("Falha ao salvar clipe", "Veja o log para detalhes.", ToolTipIcon.Error);
             return;
         }
+        await Library.ClipSavedAsync(session, path, kind, label, requestedAt);
         if (settings.NotifySound) SystemSounds.Asterisk.Play();
-        Notify($"Clipe salvo: {label}", Path.GetFileName(path));
+        Notify(kind == "manual" ? "Clipe salvo" : $"Destaque salvo: {label}", Path.GetFileName(path));
         Clips.EnforceQuota(settings.OutputDir, settings.MaxStorageGb);
-        OnUi(() => library?.Reload());
+        OnUi(() => main?.RefreshLibrary());
     }
 
     async Task ToggleRecordingAsync()
     {
         if (!engine.Running)
         {
-            await StartEngineAsync(activeGame?.Name ?? "Desktop", Math.Max(0, settings.MonitorIndex));
+            await StartEngineAsync(activeGame?.Name ?? "Desktop", Math.Max(0, settings.MonitorIndex), null);
             if (!engine.Running) return;
             engine.BeginRecording();
             Notify("Gravação iniciada", $"{settings.HotkeyToggleRecording} para parar.");
         }
         else if (engine.IsRecording)
         {
+            var session = engine.SessionId;
+            var start = engine.RecordingSince;
+            var requestedAt = DateTime.Now;
             var path = await engine.EndRecordingAsync();
-            if (path != null) Notify("Gravação salva", Path.GetFileName(path));
+            if (path != null)
+            {
+                await Library.ClipSavedAsync(session, path, "full", LabelOf(path), requestedAt, start);
+                Notify("Gravação salva", Path.GetFileName(path));
+            }
             else Notify("Falha ao salvar gravação", "Veja o log para detalhes.", ToolTipIcon.Error);
-            OnUi(() => library?.Reload());
-            if (activeGame == null && !settings.AlwaysOnBuffer) await engine.StopAsync();
+            OnUi(() => main?.RefreshLibrary());
+            if (activeGame == null && !settings.AlwaysOnBuffer) await StopEngineAndReportAsync();
         }
         else
         {
@@ -201,6 +241,10 @@ sealed class TrayApp : ApplicationContext
         }
         OnUi(UpdateUi);
     }
+
+    StatusDto Status() => new(
+        !engine.Running ? "idle" : engine.IsRecording ? "recording" : "buffer",
+        engine.Game, engine.EncoderLabel, settings.HotkeySaveClip, settings.HotkeyToggleRecording, Version);
 
     void UpdateUi()
     {
@@ -214,6 +258,7 @@ sealed class TrayApp : ApplicationContext
         tray.Icon = engine.IsRecording ? iconRecording : iconIdle;
         var tip = "Aeonis — " + state;
         tray.Text = tip.Length > 63 ? tip[..63] : tip;
+        main?.PushStatus();
     }
 
     // ---------------- Janelas e utilidades ----------------
@@ -227,29 +272,44 @@ sealed class TrayApp : ApplicationContext
         if (errors.Count > 0) Notify("Atalhos", string.Join("\n", errors), ToolTipIcon.Warning);
     }
 
-    void ShowLibrary()
+    void ShowMain(string page)
     {
-        if (library is { IsDisposed: false })
+        if (main is { IsDisposed: false })
         {
-            library.Activate();
+            main.ShowPage(page);
             return;
         }
-        library = new LibraryForm(() => settings);
-        library.FormClosed += (_, _) => library = null;
-        library.Show();
+        main = new MainWindow(() => settings, ApplySettings, Status, page);
+        main.FormClosed += (_, _) =>
+        {
+            main = null;
+            ReleaseMemory();
+        };
+        main.Show();
     }
 
-    void ShowSettings()
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    static extern bool SetProcessWorkingSetSize(IntPtr process, nint min, nint max);
+
+    /// <summary>Devolve ao Windows a memória usada pela janela, para o Aeonis pesar o mínimo durante o jogo.</summary>
+    static void ReleaseMemory()
     {
-        using var form = new SettingsForm(settings.Clone());
-        if (form.ShowDialog() != DialogResult.OK) return;
-        settings = form.Result.Normalize();
+        System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        SetProcessWorkingSetSize(Process.GetCurrentProcess().Handle, -1, -1);
+    }
+
+    void ApplySettings(Settings updated)
+    {
+        settings = updated;
         try { settings.Save(); }
         catch (Exception ex) { Notify("Erro ao salvar configurações", ex.Message, ToolTipIcon.Error); }
         Settings.ApplyStartup(settings.StartWithWindows);
         RegisterHotkeys();
         if (Ffmpeg.Locate(settings.FfmpegPath) == null) ShowFfmpegMissing();
-        else if (settings.AlwaysOnBuffer && !engine.Running) _ = StartEngineAsync("Desktop", Math.Max(0, settings.MonitorIndex));
+        else if (settings.AlwaysOnBuffer && !engine.Running) _ = StartEngineAsync("Desktop", Math.Max(0, settings.MonitorIndex), null);
         UpdateUi();
     }
 
@@ -287,8 +347,9 @@ sealed class TrayApp : ApplicationContext
         hotkeys.Dispose();
         tray.Visible = false;
         tray.Dispose();
-        library?.Close();
+        main?.Close();
         invoker.Dispose();
+        showSignal.Set();
         ExitThread();
     }
 }
