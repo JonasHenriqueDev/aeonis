@@ -45,7 +45,8 @@ QVariantList fields(const Settings &s)
         mics.append(option(s.micDevice, s.micDevice + QStringLiteral(" (não encontrado)")));
 
     const QVariantList modes{option(QStringLiteral("Destaques"), QStringLiteral("Somente destaques")),
-                             option(QStringLiteral("PartidaCompleta"), QStringLiteral("Partida completa + destaques"))};
+                             option(QStringLiteral("PartidaCompleta"), QStringLiteral("Partida completa + destaques")),
+                             option(QStringLiteral("SomentePartida"), QStringLiteral("Somente partida completa"))};
     const QVariantList encoders{
         option(QStringLiteral("Auto"), QStringLiteral("Automático (recomendado)")),
         option(QStringLiteral("NvidiaH264"), QStringLiteral("NVIDIA NVENC H.264")),
@@ -60,19 +61,26 @@ QVariantList fields(const Settings &s)
     if (s.fps != 30 && s.fps != 60 && s.fps != 120 && s.fps != 144)
         fpsOptions.append(option(s.fps, QStringLiteral("%1 fps").arg(s.fps)));
 
+    const QVariantList quality{option(6, QStringLiteral("Baixa — 6 Mbps")),
+                               option(8, QStringLiteral("Média — 8 Mbps")),
+                               option(10, QStringLiteral("Alta — 10 Mbps (padrão)")),
+                               option(15, QStringLiteral("Muito alta — 15 Mbps")),
+                               option(20, QStringLiteral("Ultra — 20 Mbps")),
+                               option(35, QStringLiteral("Máxima — 35 Mbps"))};
+
     QVariantList out;
     out << field("OutputDir", "Gravação", "Pasta dos vídeos", "Onde os clipes e partidas são salvos (uma subpasta por jogo).", "folder", s.outputDir)
-        << field("Mode", "Gravação", "Modo", "Somente destaques: mantém só um buffer curto e salva clipes. Partida completa: grava a partida inteira e também gera os clipes de destaque.", "select", toString(s.mode), modes)
+        << field("Mode", "Gravação", "Modo", "Somente destaques: mantém só um buffer curto e salva clipes. Partida completa + destaques: grava a partida inteira e também gera os clipes de destaque. Somente partida completa: grava a partida inteira e marca os destaques na linha do tempo, sem criar vídeos separados.", "select", toString(s.mode), modes)
         << field("Encoder", "Gravação", "Encoder de vídeo", "Automático escolhe o encoder de hardware disponível (NVIDIA > AMD > Intel). CPU x264 é o único que pesa no processador.", "select", toString(s.encoder), encoders)
         << field("Fps", "Gravação", "FPS", "Quadros por segundo da gravação (30 ou 60 recomendados).", "select", s.fps, fpsOptions)
-        << field("BitrateMbps", "Gravação", "Bitrate (Mbps)", "Qualidade/tamanho. 1080p60: 15–25 Mbps. 1440p: 25–40 Mbps.", "int", s.bitrateMbps)
+        << field("BitrateMbps", "Gravação", "Qualidade do vídeo", "Taxa de bits: mais alta = imagem melhor e arquivos maiores. Alta (10 Mbps) já fica ótima em 1080p60; para 1440p ou mais de 60 fps use Ultra ou Máxima. Personalizada aceita de 2 a 150 Mbps.", "preset", s.bitrateMbps, quality)
         << field("MonitorIndex", "Gravação", "Monitor", "Qual tela gravar.", "select", s.monitorIndex, monitors)
         << field("DrawMouse", "Gravação", "Mostrar cursor", "Desenha o ponteiro do mouse no vídeo.", "bool", s.drawMouse)
         << field("AlwaysOnBuffer", "Gravação", "Buffer sempre ativo", "Mantém o replay buffer rodando mesmo sem jogo detectado (grava a área de trabalho).", "bool", s.alwaysOnBuffer)
         << field("ReplaySeconds", "Clipes", "Duração do clipe manual (s)", "Quantos segundos para trás o atalho de salvar clipe captura.", "int", s.replaySeconds)
         << field("ClipPreSeconds", "Clipes", "Segundos antes do destaque", "", "int", s.clipPreSeconds)
         << field("ClipPostSeconds", "Clipes", "Segundos depois do destaque", "", "int", s.clipPostSeconds)
-        << field("AutoHighlights", "Clipes", "Destaques automáticos", "Salva clipes sozinho em abates/multikills (League of Legends e CS2, via APIs oficiais locais).", "bool", s.autoHighlights)
+        << field("AutoHighlights", "Clipes", "Destaques automáticos", "Detecta abates/multikills (League of Legends e CS2, via APIs oficiais locais) e salva clipes ou, no modo Somente partida completa, marca na linha do tempo.", "bool", s.autoHighlights)
         << field("ClipDeaths", "Clipes", "Clipar mortes", "", "bool", s.clipDeaths)
         << field("ClipAssists", "Clipes", "Clipar assistências", "", "bool", s.clipAssists)
         << field("MaxStorageGb", "Clipes", "Limite de armazenamento (GB)", "Quando os vídeos não salvos passarem deste tamanho, os mais antigos são apagados automaticamente. Vídeos marcados como salvos na biblioteca (★) nunca são apagados e não contam para o limite. 0 = sem limite.", "number", s.maxStorageGb)
@@ -82,7 +90,7 @@ QVariantList fields(const Settings &s)
         << field("HotkeySaveClip", "Atalhos", "Salvar clipe", "Clique e pressione a combinação (ex.: Alt+F10).", "hotkey", s.hotkeySaveClip)
         << field("HotkeyToggleRecording", "Atalhos", "Iniciar/parar gravação", "", "hotkey", s.hotkeyToggleRecording)
         << field("StartWithWindows", "Geral", "Iniciar com o Windows", "Abre só o ícone na bandeja ao entrar no Windows.", "bool", s.startWithWindows)
-        << field("NotifySound", "Geral", "Som ao salvar clipe", "", "bool", s.notifySound)
+        << field("Notifications", "Geral", "Notificações", "Avisos do Windows ao detectar jogo, salvar clipe ou gravação. Falhas são sempre avisadas.", "bool", s.notifications)
         << field("AutoUpdate", "Geral", "Verificar atualizações", "Consulta o GitHub uma vez por dia e avisa quando houver versão nova.", "bool", s.autoUpdate)
         << field("CustomGames", "Geral", "Jogos personalizados", "Um por linha: Nome=executavel.exe;outro.exe", "multiline", s.customGames);
     return out;
@@ -121,7 +129,7 @@ bool apply(Settings &s, const QVariantMap &values, QString *error)
             (k == QLatin1String("HotkeySaveClip") ? u.hotkeySaveClip : u.hotkeyToggleRecording) = v.toString();
         }
         else if (k == QLatin1String("StartWithWindows")) u.startWithWindows = v.toBool();
-        else if (k == QLatin1String("NotifySound")) u.notifySound = v.toBool();
+        else if (k == QLatin1String("Notifications")) u.notifications = v.toBool();
         else if (k == QLatin1String("AutoUpdate")) u.autoUpdate = v.toBool();
         else if (k == QLatin1String("CustomGames")) u.customGames = v.toString();
     }

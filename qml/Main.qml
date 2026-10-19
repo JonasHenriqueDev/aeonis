@@ -22,6 +22,22 @@ ApplicationWindow {
     property int thumbTick: 0
     property bool openedPlayer: false
     property bool debugPlayer: InitialPage === "player"
+    property bool playerFullscreen: false // vídeo ocupando a tela toda
+    property int visibilityBeforeFullscreen: Window.Windowed
+
+    function setPlayerFullscreen(on) {
+        if (on === playerFullscreen) return
+        if (on) {
+            visibilityBeforeFullscreen = visibility
+            playerFullscreen = true
+            showFullScreen()
+        } else {
+            playerFullscreen = false
+            if (visibilityBeforeFullscreen === Window.Maximized) showMaximized()
+            else showNormal()
+        }
+    }
+    onCurrentChanged: if (!current) setPlayerFullscreen(false)
 
     readonly property var lib: App.library
     readonly property var matches: (lib.matches || []).filter(m => !gameFilter || m.game === gameFilter)
@@ -77,6 +93,7 @@ ApplicationWindow {
         spacing: 0
 
         Sidebar {
+            visible: !win.playerFullscreen
             Layout.preferredWidth: 248
             Layout.fillHeight: true
         }

@@ -34,6 +34,7 @@ Item {
             switch (row.field.type) {
             case "bool": return boolControl
             case "select": return selectControl
+            case "preset": return presetControl
             case "int": case "number": return numberControl
             case "hotkey": return hotkeyControl
             case "folder": return folderControl
@@ -56,6 +57,40 @@ Item {
             valueRole: "value"
             currentIndex: row.field.options.findIndex(o => o.value === row.value)
             onActivated: index => row.edited(row.field.options[index].value)
+        }
+    }
+    // Predefinições + "Personalizada" (valor livre em Mbps).
+    Component {
+        id: presetControl
+        RowLayout {
+            id: preset
+            spacing: 8
+            readonly property var options: row.field.options.concat([{ value: -1, label: "Personalizada" }])
+            property bool custom: !row.field.options.some(o => o.value === row.value)
+            ComboBox {
+                implicitWidth: 240
+                model: preset.options
+                textRole: "label"
+                valueRole: "value"
+                currentIndex: preset.custom ? preset.options.length - 1 : preset.options.findIndex(o => o.value === row.value)
+                onActivated: index => {
+                    const v = preset.options[index].value
+                    preset.custom = v === -1
+                    if (v !== -1) row.edited(v)
+                }
+            }
+            TextField {
+                visible: preset.custom
+                implicitWidth: 70
+                text: String(row.value)
+                horizontalAlignment: Text.AlignRight
+                validator: IntValidator { bottom: 2; top: 150 }
+                onEditingFinished: {
+                    const v = parseInt(text || "0")
+                    if (!isNaN(v) && v !== row.value) row.edited(v)
+                }
+            }
+            Text { visible: preset.custom; text: "Mbps"; color: Theme.muted; font.pixelSize: 13 }
         }
     }
     Component {

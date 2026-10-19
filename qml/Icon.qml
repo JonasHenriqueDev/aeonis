@@ -27,6 +27,8 @@ Item {
         starFill: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" fill="CURRENT"/>',
         volume: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/>',
         mute: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M22 9l-6 6M16 9l6 6"/>',
+        expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+        shrink: '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>',
         record: '<circle cx="12" cy="12" r="6" fill="CURRENT"/>',
         download: '<path d="M12 3v12M7 10l5 5 5-5M4 16v5h16v-5"/>',
         close: '<path d="M6 6l12 12M18 6L6 18"/>'

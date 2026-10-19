@@ -39,6 +39,8 @@ AppMutex=Aeonis.SingleInstance
 ; O app não abre enquanto este mutex existe (exceto o relançamento com --after-update).
 SetupMutex=AeonisSetupMutex
 CloseApplications=yes
+; Avisa o Explorer ao terminar, que recarrega os ícones em cache (os da versão antiga).
+ChangesAssociations=yes
 
 [Languages]
 Name: "ptbr"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
@@ -63,8 +65,9 @@ Type: filesandordirs; Name: "{app}\qml"
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\Aeonis"; Filename: "{app}\Aeonis.exe"
-Name: "{autodesktop}\Aeonis"; Filename: "{app}\Aeonis.exe"; Tasks: desktopicon
+; AppUserModelID igual ao do processo (main.cpp): a janela agrupa com o atalho fixado e usa o ícone novo.
+Name: "{autoprograms}\Aeonis"; Filename: "{app}\Aeonis.exe"; IconFilename: "{app}\Aeonis.exe"; AppUserModelID: "Aeonis.Aeonis"
+Name: "{autodesktop}\Aeonis"; Filename: "{app}\Aeonis.exe"; IconFilename: "{app}\Aeonis.exe"; AppUserModelID: "Aeonis.Aeonis"; Tasks: desktopicon
 
 [Registry]
 ; Mesma chave que a opção "Iniciar com o Windows" das configurações do app usa.

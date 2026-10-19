@@ -64,6 +64,15 @@ private slots:
         QCOMPARE(o.value("FfmpegPath").toString(), QStringLiteral("C:\\x\\ffmpeg.exe")); // preservada
     }
 
+    void settingsDefaultsAndModes()
+    {
+        const Settings d;
+        QCOMPARE(d.bitrateMbps, 10);
+        QVERIFY(!d.notifications);
+        QVERIFY(captureModeFrom(QStringLiteral("SomentePartida")) == CaptureMode::SomentePartida);
+        QCOMPARE(toString(CaptureMode::SomentePartida), QStringLiteral("SomentePartida"));
+    }
+
     void libraryDates()
     {
         const auto e = LibEntry::fromJsonLine(R"({"T":"clip","S":"abc","At":"2026-10-18T22:51:03.1234567-03:00","Path":"D:\\v.mp4","Kind":"highlight","Label":"Abate","Duration":21.5,"Start":"2026-10-18T22:50:41.6234567-03:00"})");

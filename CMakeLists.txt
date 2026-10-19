@@ -77,7 +77,6 @@ qt_add_executable(Aeonis WIN32
     src/app/App.cpp src/app/App.h
     src/app/TrayIcon.cpp src/app/TrayIcon.h
     src/app/AppIcon.cpp src/app/AppIcon.h
-    src/app/SoundEffects.cpp src/app/SoundEffects.h
     src/app/AutoUpdater.cpp src/app/AutoUpdater.h
     src/app/WindowHost.cpp src/app/WindowHost.h
     src/ui/Backend.cpp src/ui/Backend.h

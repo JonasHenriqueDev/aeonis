@@ -64,7 +64,7 @@ src/
 ├─ capture/                  DesktopDuplication, Encoders, SegmentWriter, CaptureEngine, Clips (nomes, ★, limite)
 ├─ audio/                    AudioCapture (WASAPI loopback/microfone), AudioMixer (silêncio, mixagem, AAC)
 ├─ games/                    GameCatalog, GameWatcher, Highlighter, EventSources (LoL, CS2)
-├─ app/                      App (controlador), TrayIcon, Hotkeys, SoundEffects, AutoUpdater, WindowHost
+├─ app/                      App (controlador), TrayIcon, Hotkeys, AutoUpdater, WindowHost
 └─ ui/                       Backend (objeto do QML), LibraryModel, SettingsSchema
 qml/                         Main, Sidebar, MatchesView, ClipsView, Player, SettingsView, Theme…
 tests/                       Qt Test: configurações e histórico da versão C#, destaques, LoL/CS2, atalhos,

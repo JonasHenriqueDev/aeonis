@@ -14,6 +14,7 @@ FocusScope {
     property bool trimming: false
     readonly property real duration: player.duration > 0 ? player.duration / 1000 : (media ? Math.max(0, win.durationOf(media)) : 0)
     readonly property real position: player.position / 1000
+    readonly property bool fullscreen: win.playerFullscreen
     focus: true
     Component.onCompleted: {
         forceActiveFocus()
@@ -27,6 +28,7 @@ FocusScope {
             player.source = media.url
     }
 
+    function setFullscreenToggle() { win.setPlayerFullscreen(!fullscreen); forceActiveFocus() }
     function seek(t) { player.position = Math.max(0, Math.min(duration, t)) * 1000 }
     function setMark(which) {
         if (!trim) return
@@ -37,7 +39,8 @@ FocusScope {
     }
 
     Keys.onPressed: event => {
-        if (event.key === Qt.Key_Escape) { if (trim) trim = null; else win.current = null }
+        if (event.key === Qt.Key_Escape) { if (fullscreen) win.setPlayerFullscreen(false); else if (trim) trim = null; else win.current = null }
+        else if (event.key === Qt.Key_F || event.key === Qt.Key_F11) win.setPlayerFullscreen(!fullscreen)
         else if (event.key === Qt.Key_Space) { player.playbackState === MediaPlayer.PlayingState ? player.pause() : player.play() }
         else if (event.key === Qt.Key_Right) seek(position + 5)
         else if (event.key === Qt.Key_Left) seek(position - 5)
@@ -62,11 +65,12 @@ FocusScope {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 20
+        anchors.margins: p.fullscreen ? 0 : 20
         spacing: 14
 
         // Barra superior
         RowLayout {
+            visible: !p.fullscreen
             spacing: 10
             AButton { text: "Voltar"; iconName: "back"; onClicked: win.current = null }
             GameAvatar { game: p.media ? p.media.game : ""; iconUrl: p.media ? win.gameIcon(p.media.game) : ""; size: 36 }
@@ -114,7 +118,7 @@ FocusScope {
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    radius: Theme.radius
+                    radius: p.fullscreen ? 0 : Theme.radius
                     color: "black"
                     clip: true
                     VideoOutput {
@@ -124,7 +128,7 @@ FocusScope {
                     MouseArea {
                         anchors.fill: parent
                         onClicked: player.playbackState === MediaPlayer.PlayingState ? player.pause() : player.play()
-                        onDoubleClicked: win.visibility === Window.FullScreen ? win.showNormal() : win.showFullScreen()
+                        onDoubleClicked: win.setPlayerFullscreen(!p.fullscreen)
                     }
                     Column {
                         anchors.centerIn: parent
@@ -148,6 +152,8 @@ FocusScope {
                 Item {
                     id: timeline
                     Layout.fillWidth: true
+                    Layout.leftMargin: p.fullscreen ? 16 : 0
+                    Layout.rightMargin: p.fullscreen ? 16 : 0
                     Layout.preferredHeight: 26
                     Rectangle {
                         id: track
@@ -208,6 +214,9 @@ FocusScope {
 
                 // Controles
                 RowLayout {
+                    Layout.leftMargin: p.fullscreen ? 16 : 0
+                    Layout.rightMargin: p.fullscreen ? 16 : 0
+                    Layout.bottomMargin: p.fullscreen ? 12 : 0
                     spacing: 10
                     AButton {
                         iconName: player.playbackState === MediaPlayer.PlayingState ? "pause" : "play"
@@ -223,12 +232,21 @@ FocusScope {
                         onClicked: muted = !muted
                     }
                     Slider { id: volumeSlider; from: 0; to: 1; value: 0.8; Layout.preferredWidth: 120 }
+                    AButton {
+                        flat: true
+                        iconName: p.fullscreen ? "shrink" : "expand"
+                        ToolTip.visible: hovered
+                        ToolTip.text: p.fullscreen ? "Sair da tela cheia (Esc)" : "Tela cheia (F)"
+                        onClicked: p.setFullscreenToggle()
+                    }
                 }
 
                 // Corte
                 Rectangle {
                     visible: p.trim !== null
                     Layout.fillWidth: true
+                    Layout.leftMargin: p.fullscreen ? 16 : 0
+                    Layout.rightMargin: p.fullscreen ? 16 : 0
                     implicitHeight: trimRow.implicitHeight + 20
                     radius: 10
                     color: Theme.panel
@@ -260,6 +278,7 @@ FocusScope {
 
             // Desta partida
             Rectangle {
+                visible: !p.fullscreen
                 Layout.preferredWidth: 280
                 Layout.fillHeight: true
                 radius: Theme.radius

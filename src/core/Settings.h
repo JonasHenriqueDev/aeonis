@@ -7,7 +7,7 @@
 
 namespace aeonis {
 
-enum class CaptureMode { Destaques, PartidaCompleta };
+enum class CaptureMode { Destaques, PartidaCompleta, SomentePartida };
 enum class EncoderChoice { Auto, NvidiaH264, NvidiaHevc, AmdH264, IntelH264, CpuX264 };
 
 QString toString(CaptureMode m);
@@ -21,7 +21,7 @@ struct Settings {
     CaptureMode mode = CaptureMode::Destaques;
     EncoderChoice encoder = EncoderChoice::Auto;
     int fps = 60;
-    int bitrateMbps = 20;
+    int bitrateMbps = 10;
     int monitorIndex = -1; // -1 = monitor do jogo, 0 = principal, 1.. = demais
     bool drawMouse = false;
     bool alwaysOnBuffer = false;
@@ -42,7 +42,7 @@ struct Settings {
     QString hotkeyToggleRecording = QStringLiteral("Alt+F9");
     // Geral
     bool startWithWindows = false;
-    bool notifySound = true;
+    bool notifications = false; // balões do Windows (falhas aparecem sempre)
     bool autoUpdate = true;
     QString customGames;
 

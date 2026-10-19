@@ -30,6 +30,7 @@
 #include <QTimer>
 
 #include <windows.h>
+#include <shobjidl.h>
 
 using namespace aeonis;
 
@@ -112,6 +113,10 @@ int main(int argc, char *argv[])
             return 0;
         }
     }
+
+    // Identidade própria na barra de tarefas (a mesma dos atalhos do instalador): o Windows não reaproveita
+    // o ícone em cache da versão antiga, que usava o mesmo Aeonis.exe.
+    SetCurrentProcessExplicitAppUserModelID(L"Aeonis.Aeonis");
 
     QApplication app(argc, argv);
     QCoreApplication::setApplicationName(QStringLiteral("Aeonis"));

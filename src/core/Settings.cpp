@@ -15,7 +15,7 @@ namespace aeonis {
 
 namespace {
 
-const char *const ModeNames[] = {"Destaques", "PartidaCompleta"};
+const char *const ModeNames[] = {"Destaques", "PartidaCompleta", "SomentePartida"};
 const char *const EncoderNames[] = {"Auto", "NvidiaH264", "NvidiaHevc", "AmdH264", "IntelH264", "CpuX264"};
 
 // Chaves que esta versão lê e grava; o resto vai para `extra`.
@@ -23,7 +23,7 @@ const char *const KnownKeys[] = {
     "OutputDir", "Mode", "Encoder", "Fps", "BitrateMbps", "MonitorIndex", "DrawMouse", "AlwaysOnBuffer",
     "ReplaySeconds", "ClipPreSeconds", "ClipPostSeconds", "AutoHighlights", "ClipDeaths", "ClipAssists",
     "MaxStorageGb", "SystemAudio", "Microphone", "MicDevice", "HotkeySaveClip", "HotkeyToggleRecording",
-    "StartWithWindows", "NotifySound", "AutoUpdate", "CustomGames",
+    "StartWithWindows", "Notifications", "AutoUpdate", "CustomGames",
 };
 
 int readInt(const QJsonObject &o, const char *key, int fallback)
@@ -92,7 +92,7 @@ Settings Settings::fromJson(const QJsonObject &o)
     s.hotkeySaveClip = readString(o, "HotkeySaveClip", s.hotkeySaveClip);
     s.hotkeyToggleRecording = readString(o, "HotkeyToggleRecording", s.hotkeyToggleRecording);
     s.startWithWindows = readBool(o, "StartWithWindows", s.startWithWindows);
-    s.notifySound = readBool(o, "NotifySound", s.notifySound);
+    s.notifications = readBool(o, "Notifications", s.notifications);
     s.autoUpdate = readBool(o, "AutoUpdate", s.autoUpdate);
     s.customGames = readString(o, "CustomGames", s.customGames);
     s.extra = o;
@@ -125,7 +125,7 @@ QJsonObject Settings::toJson() const
     o.insert(QStringLiteral("HotkeySaveClip"), hotkeySaveClip);
     o.insert(QStringLiteral("HotkeyToggleRecording"), hotkeyToggleRecording);
     o.insert(QStringLiteral("StartWithWindows"), startWithWindows);
-    o.insert(QStringLiteral("NotifySound"), notifySound);
+    o.insert(QStringLiteral("Notifications"), notifications);
     o.insert(QStringLiteral("AutoUpdate"), autoUpdate);
     o.insert(QStringLiteral("CustomGames"), customGames);
     return o;

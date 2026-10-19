@@ -1,7 +1,6 @@
 #include "App.h"
 #include "AutoUpdater.h"
 #include "Hotkeys.h"
-#include "SoundEffects.h"
 #include "TrayIcon.h"
 #include "WindowHost.h"
 #include "capture/Clips.h"
@@ -103,7 +102,8 @@ App::~App()
 
 void App::notify(const QString &title, const QString &text, QSystemTrayIcon::MessageIcon icon)
 {
-    m_tray->notify(title, text, icon);
+    if (m_settings.notifications || icon == QSystemTrayIcon::Critical)
+        m_tray->notify(title, text, icon);
 }
 
 QString App::labelOf(const QString &path)
@@ -154,7 +154,7 @@ void App::onGameStarted(const GameDef &game, HMONITOR monitor, const QString &ex
         startEngine(game.name, target, exe, [this, game, exe](bool ok) {
             if (!ok)
                 return;
-            if (m_settings.mode == CaptureMode::PartidaCompleta)
+            if (m_settings.mode != CaptureMode::Destaques)
                 enqueue([this] { m_engine.beginRecording(); }, [this] { updateUi(); });
             if (m_settings.autoHighlights && !m_events) {
                 auto options = [this] { return EventOptions{m_settings.clipDeaths, m_settings.clipAssists}; };
@@ -164,8 +164,9 @@ void App::onGameStarted(const GameDef &game, HMONITOR monitor, const QString &ex
                     m_events = new Cs2Events(options, exe, [this](const QString &t, const QString &m) { notify(t, m); }, this);
                 if (m_events) {
                     connect(m_events, &EventSource::highlight, this, [this](const QString &reason) {
-                        Library::event(m_engine.sessionId(), reason);
-                        m_highlighter->trigger(reason);
+                        Library::event(m_engine.sessionId(), reason); // marcador na linha do tempo
+                        if (m_settings.mode != CaptureMode::SomentePartida)
+                            m_highlighter->trigger(reason);
                     });
                     m_events->start();
                 }
@@ -248,8 +249,6 @@ void App::saveClip(int seconds, const QString &label, const QString &kind)
             return;
         }
         Library::clipSaved(r.first, r.second.path, kind, label, requestedAt, r.second.duration);
-        if (m_settings.notifySound)
-            SoundEffects::clipSaved();
         notify(kind == QLatin1String("manual") ? QStringLiteral("Clipe salvo") : QStringLiteral("Destaque salvo: %1").arg(label),
                QFileInfo(r.second.path).fileName());
         enforceQuota();
