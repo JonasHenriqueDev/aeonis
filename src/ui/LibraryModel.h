@@ -1,5 +1,5 @@
 #pragma once
-// Monta a biblioteca no formato do Outplayed: dia -> partida -> clipes. A partida vem do histórico
+// Monta a biblioteca no formato dia -> partida -> clipes. A partida vem do histórico
 // (library.jsonl); vídeos sem histórico (antigos, importados) são agrupados por jogo e por
 // proximidade no tempo. O resultado vai para o QML como listas/mapas (QVariant).
 

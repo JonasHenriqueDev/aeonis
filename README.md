@@ -1,7 +1,7 @@
 # Aeonis
 
-Gravador de gameplay **open-source, standalone e sem anúncios** para Windows — uma alternativa leve ao
-Outplayed. Sem Overwolf, sem conta, sem nuvem, sem telemetria.
+Gravador de gameplay **open-source, standalone e sem anúncios** para Windows. Leve, sem conta, sem nuvem
+e sem telemetria.
 
 - **Replay buffer**: `Alt+F10` salva os últimos 30 s.
 - **Gravação longa**: `Alt+F9` inicia/para; ou o modo *Partida completa* grava cada partida inteira.
@@ -9,7 +9,7 @@ Outplayed. Sem Overwolf, sem conta, sem nuvem, sem telemetria.
   **Counter-Strike 2** (abates, double/triple/quadra kill, ace), usando as APIs oficiais locais dos jogos.
 - **Detecção automática** de mais de 20 jogos (+ jogos personalizados): começa a gravar quando o jogo abre
   e para quando fecha.
-- **Biblioteca** no estilo do Outplayed: partidas por dia, clipes por jogo, player com os eventos marcados na
+- **Biblioteca** organizada: partidas por dia, clipes por jogo, player com os eventos marcados na
   linha do tempo, corte sem re-encode, ★ para proteger vídeos e exclusão para a lixeira.
 - Áudio do sistema e microfone (WASAPI), limite de armazenamento, iniciar com o Windows, atualização automática.
 
@@ -81,10 +81,6 @@ O plano da migração para C++ está em [docs/PLANO_CPP.md](docs/PLANO_CPP.md).
 - Monitor girado (retrato) ainda não é corrigido; monitores HDR são gravados em SDR (8 bits).
 - Destaques automáticos só em LoL e CS2 (os demais jogos não oferecem API pública de eventos).
 - Ao abrir o CS2 pela primeira vez, o Aeonis instala `gamestate_integration_aeonis.cfg`; reinicie o jogo uma vez.
-
-## Sobre a análise do Outplayed
-Veja [docs/ANALISE.md](docs/ANALISE.md). O Aeonis é uma reimplementação independente (clean-room) e não
-contém código nem assets do Outplayed/Overwolf. "Outplayed" é marca de seus respectivos donos.
 
 ## Licença
 [GPL-3.0-or-later](LICENSE). Você pode usar, estudar, modificar e redistribuir o Aeonis à vontade; quem

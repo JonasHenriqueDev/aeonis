@@ -1,7 +1,11 @@
-﻿cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.25)
 
 project(Aeonis VERSION 1.2.0 LANGUAGES CXX)
-set(AEONIS_RELEASE_VERSION "${PROJECT_VERSION}" CACHE STRING "Versão completa, incluindo sufixo de pré-release")
+# A versão vem sempre do project() (não do cache: um valor antigo em cache gerou um app que se dizia
+# 1.0.0 dentro do pacote 1.1.0 e se atualizava em loop). Só o sufixo de pré-release é opcional.
+set(AEONIS_VERSION_SUFFIX "" CACHE STRING "Sufixo de pré-release (ex.: -beta1)")
+set(AEONIS_RELEASE_VERSION "${PROJECT_VERSION}${AEONIS_VERSION_SUFFIX}")
+configure_file(assets/aeonis.rc.in "${CMAKE_CURRENT_BINARY_DIR}/aeonis.rc" @ONLY)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -95,9 +99,10 @@ qt_add_executable(Aeonis WIN32
     src/app/AppIcon.cpp src/app/AppIcon.h
     src/app/AutoUpdater.cpp src/app/AutoUpdater.h
     src/app/WindowHost.cpp src/app/WindowHost.h
+    src/app/UpdateSplash.cpp src/app/UpdateSplash.h
     src/ui/Backend.cpp src/ui/Backend.h
     src/ui/SettingsSchema.cpp src/ui/SettingsSchema.h
-    assets/aeonis.rc
+    "${CMAKE_CURRENT_BINARY_DIR}/aeonis.rc"
 )
 set_target_properties(Aeonis PROPERTIES OUTPUT_NAME "Aeonis")
 qt_add_resources(Aeonis app_icons PREFIX "/" BASE assets FILES
@@ -125,6 +130,7 @@ qt_add_qml_module(Aeonis
         qml/AboutView.qml
         qml/SmoothScroll.qml
         qml/TitleBar.qml
+        qml/UpdateSplash.qml
         qml/SettingRow.qml
         qml/AButton.qml
         qml/YouTubeDialog.qml

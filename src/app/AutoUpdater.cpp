@@ -1,6 +1,8 @@
 #include "AutoUpdater.h"
 #include "core/Log.h"
+#include "core/Paths.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -32,6 +34,31 @@ void AutoUpdater::setAutomatic(bool enabled)
     } else if (!enabled) {
         m_timer.stop();
     }
+}
+
+namespace {
+
+QString attemptFile() { return QDir(Paths::appData()).filePath(QStringLiteral("update-attempt.txt")); }
+
+} // namespace
+
+bool AutoUpdater::recentlyTried(const QString &version) const
+{
+    QFile f(attemptFile());
+    if (!f.open(QIODevice::ReadOnly))
+        return false;
+    const QStringList parts = QString::fromUtf8(f.readAll()).trimmed().split(QLatin1Char('|'));
+    if (parts.size() != 2 || parts[0] != version)
+        return false;
+    const QDateTime at = QDateTime::fromString(parts[1], Qt::ISODate);
+    return at.isValid() && at.secsTo(QDateTime::currentDateTimeUtc()) < 24 * 3600;
+}
+
+void AutoUpdater::fail(const QString &reason)
+{
+    m_progress = -1;
+    setStatus(reason, false);
+    emit installFailed(reason);
 }
 
 void AutoUpdater::setStatus(const QString &status, bool busy)
@@ -122,7 +149,9 @@ void AutoUpdater::downloadAndInstall(bool reopenWindow)
         setStatus(QStringLiteral("Endereço de download inesperado."), false);
         return;
     }
+    m_progress = 0;
     setStatus(QStringLiteral("Baixando a versão %1…").arg(m_newVersion), true);
+    emit installStarted();
     QNetworkRequest req(url);
     req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("Aeonis/%1").arg(version()));
     req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
@@ -130,6 +159,7 @@ void AutoUpdater::downloadAndInstall(bool reopenWindow)
     m_reply = m_net.get(req);
     connect(m_reply, &QNetworkReply::downloadProgress, this, [this](qint64 got, qint64 total) {
         if (total > 0) {
+            m_progress = qreal(got) / total;
             m_status = QStringLiteral("Baixando a versão %1… %2%").arg(m_newVersion).arg(got * 100 / total);
             emit changed();
         }
@@ -137,27 +167,32 @@ void AutoUpdater::downloadAndInstall(bool reopenWindow)
     connect(m_reply, &QNetworkReply::finished, this, [this, reopenWindow, reply = m_reply.data()] {
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) {
-            setStatus(QStringLiteral("Falha no download (%1).").arg(reply->errorString()), false);
+            fail(QStringLiteral("Falha no download (%1).").arg(reply->errorString()));
             return;
         }
         const QByteArray data = reply->readAll();
         if (data.size() < 1'000'000 || !data.startsWith("MZ")) {
-            setStatus(QStringLiteral("O instalador baixado é inválido."), false);
+            fail(QStringLiteral("O instalador baixado é inválido."));
             return;
         }
         const QString path = QDir::toNativeSeparators(QStandardPaths::writableLocation(QStandardPaths::TempLocation)
                                                       + QLatin1Char('/') + m_assetName);
         QFile f(path);
         if (!f.open(QIODevice::WriteOnly) || f.write(data) != data.size()) {
-            setStatus(QStringLiteral("Não foi possível salvar o instalador."), false);
+            fail(QStringLiteral("Não foi possível salvar o instalador."));
             return;
         }
         f.close();
         Log::info(QStringLiteral("Atualização: iniciando %1").arg(path));
-        if (!QProcess::startDetached(path, {QStringLiteral("/SILENT"), QStringLiteral("/SUPPRESSMSGBOXES"),
+        QFile attempt(attemptFile());
+        if (attempt.open(QIODevice::WriteOnly))
+            attempt.write(QStringLiteral("%1|%2").arg(m_newVersion, QDateTime::currentDateTimeUtc().toString(Qt::ISODate)).toUtf8());
+        m_progress = -1;
+        // /VERYSILENT: sem a janela do Inno Setup; o progresso aparece na tela de atualização do app.
+        if (!QProcess::startDetached(path, {QStringLiteral("/VERYSILENT"), QStringLiteral("/SUPPRESSMSGBOXES"),
                                             QStringLiteral("/NORESTART"), QStringLiteral("/UPDATE=1"),
                                             QStringLiteral("/OPENWINDOW=%1").arg(reopenWindow ? 1 : 0)})) {
-            setStatus(QStringLiteral("Não foi possível iniciar o instalador."), false);
+            fail(QStringLiteral("Não foi possível iniciar o instalador."));
             return;
         }
         setStatus(QStringLiteral("Instalando a versão %1…").arg(m_newVersion), true);
