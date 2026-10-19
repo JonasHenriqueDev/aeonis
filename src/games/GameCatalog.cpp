@@ -1,5 +1,12 @@
 #include "GameCatalog.h"
 
+#include <QFileInfo>
+#include <QRegularExpression>
+
+#include <vector>
+
+#include <windows.h>
+
 namespace aeonis::GameCatalog {
 
 QList<GameDef> builtIn()
@@ -53,6 +60,38 @@ QList<GameDef> parseCustom(const QString &text)
             out.append({name, exes, {}});
     }
     return out;
+}
+
+QString displayName(const QString &exePath)
+{
+    const QString fallback = QFileInfo(exePath).completeBaseName();
+    const std::wstring path = QFileInfo(exePath).absoluteFilePath().replace(QLatin1Char('/'), QLatin1Char('\\')).toStdWString();
+    DWORD handle = 0;
+    const DWORD size = GetFileVersionInfoSizeW(path.c_str(), &handle);
+    if (size == 0)
+        return fallback;
+    std::vector<char> data(size);
+    if (!GetFileVersionInfoW(path.c_str(), 0, size, data.data()))
+        return fallback;
+    struct Translation { WORD language, codePage; } *tr = nullptr;
+    UINT len = 0;
+    if (!VerQueryValueW(data.data(), L"\\VarFileInfo\\Translation", reinterpret_cast<void **>(&tr), &len) || len < sizeof(Translation))
+        return fallback;
+    for (const wchar_t *key : {L"ProductName", L"FileDescription"}) {
+        const QString query = QStringLiteral("\\StringFileInfo\\%1%2\\%3")
+                                  .arg(tr->language, 4, 16, QLatin1Char('0')).arg(tr->codePage, 4, 16, QLatin1Char('0'))
+                                  .arg(QString::fromWCharArray(key));
+        wchar_t *value = nullptr;
+        if (VerQueryValueW(data.data(), reinterpret_cast<const wchar_t *>(query.utf16()), reinterpret_cast<void **>(&value), &len) && len > 1) {
+            QString name = QString::fromWCharArray(value).trimmed();
+            name.remove(QRegularExpression(QStringLiteral("[=;\r\n#]"))); // não quebra o formato Nome=exe
+            // Nomes genéricos de motores/launchers não ajudam.
+            static const QRegularExpression generic(QStringLiteral("^(BootstrapPackagedGame|UnrealGame|Unity|Launcher|Game)$"), QRegularExpression::CaseInsensitiveOption);
+            if (!name.isEmpty() && !generic.match(name).hasMatch() && name.size() <= 60)
+                return name;
+        }
+    }
+    return fallback;
 }
 
 QList<GameDef> all(const QString &customGames)

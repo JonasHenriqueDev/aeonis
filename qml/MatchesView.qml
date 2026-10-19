@@ -86,7 +86,7 @@ Item {
         }
 
         contentItem: RowLayout {
-            spacing: 16
+            spacing: 14
 
             // Miniatura do vídeo principal (partida completa ou primeiro clipe)
             Rectangle {
@@ -119,36 +119,7 @@ Item {
             }
 
             // Campeão (LoL) ou ícone do jogo
-            Item {
-                Layout.preferredWidth: 52
-                Layout.preferredHeight: 52
-                Rectangle {
-                    anchors.fill: parent
-                    visible: card.hasInfo
-                    radius: 26
-                    color: Theme.card
-                    border.color: card.info.result ? card.resultColor : Theme.line
-                    border.width: 2
-                    clip: true
-                    Image {
-                        anchors.fill: parent
-                        anchors.margins: 2
-                        source: card.info.championIcon || ""
-                        sourceSize: Qt.size(104, 104)
-                        fillMode: Image.PreserveAspectCrop
-                        visible: status === Image.Ready
-                    }
-                    Text {
-                        anchors.centerIn: parent
-                        visible: !card.info.championIcon
-                        text: (card.info.champion || "?").slice(0, 2).toUpperCase()
-                        color: Theme.text
-                        font.pixelSize: 16
-                        font.weight: Font.DemiBold
-                    }
-                }
-                GameAvatar { anchors.centerIn: parent; visible: !card.hasInfo; game: card.match.game; iconUrl: win.gameIcon(card.match.game); size: 44 }
-            }
+            MatchAvatar { match: card.match; size: 52 }
 
             ColumnLayout {
                 Layout.preferredWidth: 220
@@ -182,7 +153,7 @@ Item {
             // KDA
             ColumnLayout {
                 visible: card.hasInfo
-                Layout.preferredWidth: 130
+                Layout.preferredWidth: 112
                 spacing: 2
                 Row {
                     spacing: 0
@@ -215,7 +186,7 @@ Item {
             Row {
                 spacing: 7
                 Repeater {
-                    model: card.summary
+                    model: card.summary.slice(0, 8)
                     Row {
                         required property var modelData
                         spacing: 4
@@ -230,7 +201,7 @@ Item {
 
             ColumnLayout {
                 spacing: 2
-                Layout.preferredWidth: 78
+                Layout.preferredWidth: 72
                 Text {
                     Layout.alignment: Qt.AlignRight
                     text: card.clipCount ? F.plural(card.clipCount, "clipe", "clipes") : "sem clipes"

@@ -55,6 +55,10 @@ public:
     Q_INVOKABLE void toggleRecording();
     Q_INVOKABLE QString folderUrl(const QString &path) const;
     Q_INVOKABLE QString pathFromUrl(const QUrl &url) const;
+    /// Jogo a partir de um executável escolhido no Explorer: { name, process, icon } (vazio se inválido).
+    Q_INVOKABLE QVariantMap gameFromExe(const QUrl &url) const;
+    /// Ícone salvo do jogo (file:///...png) ou vazio.
+    Q_INVOKABLE QString gameIconUrl(const QString &game) const;
 
 signals:
     void statusChanged();

@@ -9,6 +9,7 @@
 #include "core/Log.h"
 #include "core/Media.h"
 #include "core/MediaCache.h"
+#include "games/GameCatalog.h"
 #include "share/YouTube.h"
 
 #include <QDesktopServices>
@@ -136,6 +137,27 @@ void Backend::openExternal(const QString &path)
 {
     if (const QString v = safeVideo(path); !v.isEmpty())
         QDesktopServices::openUrl(QUrl::fromLocalFile(v));
+}
+
+QVariantMap Backend::gameFromExe(const QUrl &url) const
+{
+    const QString path = url.toLocalFile();
+    const QFileInfo info(path);
+    if (!info.isFile() || info.suffix().compare(QLatin1String("exe"), Qt::CaseInsensitive) != 0)
+        return {};
+    const QString name = GameCatalog::displayName(path);
+    MediaCache::saveGameIcon(name, path);
+    QVariantMap m;
+    m.insert(QStringLiteral("name"), name);
+    m.insert(QStringLiteral("process"), info.completeBaseName());
+    m.insert(QStringLiteral("icon"), gameIconUrl(name));
+    return m;
+}
+
+QString Backend::gameIconUrl(const QString &game) const
+{
+    const QString png = MediaCache::gameIconPath(game);
+    return QFileInfo::exists(png) ? QUrl::fromLocalFile(png).toString() : QString();
 }
 
 void Backend::openFolder() { m_app->openOutputFolder(); }

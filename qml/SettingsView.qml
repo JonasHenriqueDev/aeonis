@@ -19,9 +19,12 @@ Item {
         return out
     }
     function valueOf(f) { return f.key in dirty ? dirty[f.key] : f.value }
+    function fieldOf(key) { return App.settingsFields.find(f => f.key === key) }
+    function valueOfKey(key) { const f = fieldOf(key); return f ? valueOf(f) : undefined }
+    function same(a, b) { return JSON.stringify(a) === JSON.stringify(b) }
     function mark(f, v) {
         const d = Object.assign({}, dirty)
-        if (v === f.value) delete d[f.key]
+        if (v === f.value || same(v, f.value)) delete d[f.key]
         else d[f.key] = v
         dirty = d
     }
@@ -77,7 +80,9 @@ Item {
                                     Layout.fillWidth: true
                                     field: modelData
                                     value: page.valueOf(modelData)
+                                    host: page
                                     onEdited: v => page.mark(modelData, v)
+                                    onEditedKey: (key, v) => { const f = page.fieldOf(key); if (f) page.mark(f, v) }
                                 }
                             }
                         }

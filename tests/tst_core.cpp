@@ -65,6 +65,34 @@ private slots:
         QCOMPARE(o.value("FfmpegPath").toString(), QStringLiteral("C:\\x\\ffmpeg.exe")); // preservada
     }
 
+    void exeDisplayName()
+    {
+        // Nome da versão do arquivo (ex.: "Bloco de Notas"/"Notepad"); sem versão, o nome do arquivo.
+        const QString notepad = GameCatalog::displayName("C:/Windows/System32/notepad.exe");
+        QVERIFY(!notepad.isEmpty());
+        QVERIFY(!notepad.contains('='));
+        QCOMPARE(GameCatalog::displayName("C:/nao/existe/MeuJogo.exe"), QStringLiteral("MeuJogo"));
+    }
+
+    void settingsGameFilter()
+    {
+        Settings s;
+        QVERIFY(s.captures("Valorant"));
+        s.gameFilter = "Excluir";
+        s.gameList = {"Valorant"};
+        QVERIFY(!s.captures("valorant"));
+        QVERIFY(s.captures("League of Legends"));
+        s.gameFilter = "Somente";
+        QVERIFY(s.captures("Valorant"));
+        QVERIFY(!s.captures("League of Legends"));
+        const Settings back = Settings::fromJson(s.toJson());
+        QCOMPARE(back.gameFilter, QStringLiteral("Somente"));
+        QCOMPARE(back.gameList, QStringList{"Valorant"});
+        QJsonObject bad = s.toJson();
+        bad.insert("GameFilter", "???");
+        QCOMPARE(Settings::fromJson(bad).gameFilter, QStringLiteral("Todos"));
+    }
+
     void settingsDefaultsAndModes()
     {
         const Settings d;

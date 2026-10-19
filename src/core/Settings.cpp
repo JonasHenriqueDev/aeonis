@@ -4,6 +4,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QSaveFile>
 
@@ -23,7 +24,7 @@ const char *const KnownKeys[] = {
     "OutputDir", "Mode", "Encoder", "Fps", "BitrateMbps", "MonitorIndex", "DrawMouse", "AlwaysOnBuffer",
     "ReplaySeconds", "ClipPreSeconds", "ClipPostSeconds", "AutoHighlights", "ClipDeaths", "ClipAssists",
     "MaxStorageGb", "SystemAudio", "Microphone", "MicDevice", "HotkeySaveClip", "HotkeyToggleRecording",
-    "StartWithWindows", "Notifications", "AutoUpdate", "OpenMatchOnEnd", "CustomGames",
+    "StartWithWindows", "Notifications", "AutoUpdate", "OpenMatchOnEnd", "CustomGames", "GameFilter", "GameList",
 };
 
 int readInt(const QJsonObject &o, const char *key, int fallback)
@@ -95,11 +96,26 @@ Settings Settings::fromJson(const QJsonObject &o)
     s.notifications = readBool(o, "Notifications", s.notifications);
     s.autoUpdate = readBool(o, "AutoUpdate", s.autoUpdate);
     s.openMatchOnEnd = readBool(o, "OpenMatchOnEnd", s.openMatchOnEnd);
+    s.gameFilter = readString(o, "GameFilter", s.gameFilter);
+    s.gameList.clear();
+    for (const QJsonValue &v : o.value(QLatin1String("GameList")).toArray())
+        if (!v.toString().isEmpty())
+            s.gameList << v.toString();
     s.customGames = readString(o, "CustomGames", s.customGames);
     s.extra = o;
     for (const char *key : KnownKeys)
         s.extra.remove(QLatin1String(key));
     return s.normalize();
+}
+
+bool Settings::captures(const QString &game) const
+{
+    const bool listed = gameList.contains(game, Qt::CaseInsensitive);
+    if (gameFilter == QLatin1String("Excluir"))
+        return !listed;
+    if (gameFilter == QLatin1String("Somente"))
+        return listed;
+    return true;
 }
 
 QJsonObject Settings::toJson() const
@@ -130,6 +146,8 @@ QJsonObject Settings::toJson() const
     o.insert(QStringLiteral("AutoUpdate"), autoUpdate);
     o.insert(QStringLiteral("OpenMatchOnEnd"), openMatchOnEnd);
     o.insert(QStringLiteral("CustomGames"), customGames);
+    o.insert(QStringLiteral("GameFilter"), gameFilter);
+    o.insert(QStringLiteral("GameList"), QJsonArray::fromStringList(gameList));
     return o;
 }
 
@@ -168,6 +186,8 @@ bool Settings::save() const
 
 Settings &Settings::normalize()
 {
+    if (gameFilter != QLatin1String("Excluir") && gameFilter != QLatin1String("Somente"))
+        gameFilter = QStringLiteral("Todos");
     fps = std::clamp(fps, 10, 240);
     bitrateMbps = std::clamp(bitrateMbps, 2, 150);
     replaySeconds = std::clamp(replaySeconds, 5, 600);

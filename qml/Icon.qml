@@ -49,6 +49,13 @@ Item {
         baron: '<path d="M4 3c0 5 3 8 8 8s8-3 8-8"/><circle cx="12" cy="15.5" r="5.5"/><path d="M10 15h.01M14 15h.01"/>',
         herald: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
         grubs: '<path d="M9 7.13v-1a3 3 0 1 1 6 0v1M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6M12 20v-9M6.53 9C4.6 8.8 3 7.1 3 5M6 13H2M3 21c0-2.1 1.7-3.9 3.8-4M21 5c0 2.1-1.6 3.8-3.5 4M22 13h-4M17.2 17c2.1.1 3.8 1.9 3.8 4"/>',
+        skipBack: '<path d="M19 20 9 12l10-8v16Z"/><path d="M5 19V5"/>',
+        skipForward: '<path d="m5 4 10 8-10 8V4Z"/><path d="M19 5v14"/>',
+        rewind: '<path d="M11 19 2 12l9-7v14Z"/><path d="M22 19l-9-7 9-7v14Z"/>',
+        fastForward: '<path d="m13 19 9-7-9-7v14Z"/><path d="m2 19 9-7-9-7v14Z"/>',
+        search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
+        check: '<path d="M5 12.5 10 17l9-10"/>',
+        plus: '<path d="M12 5v14M5 12h14"/>',
         clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'
     })
 

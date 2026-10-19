@@ -46,7 +46,11 @@ App::App(bool minimized, QObject *parent) : QObject(parent), m_settings(Settings
     m_highlighter = new Highlighter([this] { return std::make_pair(m_settings.clipPreSeconds, m_settings.clipPostSeconds); },
                                     [this](int seconds, const QString &label) { saveClip(seconds, label, QStringLiteral("highlight")); },
                                     this);
-    m_watcher = new GameWatcher([this] { return GameCatalog::all(m_settings.customGames); }, this);
+    m_watcher = new GameWatcher([this] {
+        QList<GameDef> games = GameCatalog::all(m_settings.customGames);
+        games.removeIf([this](const GameDef &g) { return !m_settings.captures(g.name); }); // filtro de jogos
+        return games;
+    }, this);
     connect(m_watcher, &GameWatcher::gameStarted, this, &App::onGameStarted);
     connect(m_watcher, &GameWatcher::gameStopped, this, &App::onGameStopped);
 

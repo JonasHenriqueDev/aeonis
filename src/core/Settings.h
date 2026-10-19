@@ -4,6 +4,7 @@
 
 #include <QJsonObject>
 #include <QString>
+#include <QStringList>
 
 namespace aeonis {
 
@@ -46,6 +47,9 @@ struct Settings {
     bool autoUpdate = true;
     bool openMatchOnEnd = true; // abre a janela na partida quando o jogo fecha
     QString customGames;
+    // Quais jogos gravar: "Todos", "Excluir" (todos menos gameList) ou "Somente" (só gameList).
+    QString gameFilter = QStringLiteral("Todos");
+    QStringList gameList;
 
     QJsonObject extra; // chaves que esta versão não conhece
 
@@ -55,6 +59,8 @@ struct Settings {
     QJsonObject toJson() const;
     bool save() const;
     Settings &normalize();
+    /// O jogo detectado deve ser gravado (filtro de jogos das configurações)?
+    bool captures(const QString &game) const;
 
     /// HKCU\...\Run\Aeonis = "<exe>" --minimized
     static void applyStartup(bool enabled);

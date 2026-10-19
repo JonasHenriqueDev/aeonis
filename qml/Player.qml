@@ -14,6 +14,40 @@ FocusScope {
     readonly property var info: match && match.info ? match.info : ({})
     readonly property bool hasInfo: info.champion !== undefined
     readonly property var fullVideo: match ? match.clips.find(c => c.kind === "full") || null : null
+    // Faixa do topo: dia e jogo escolhidos (começam no da partida aberta).
+    property string stripDay: ""
+    property string stripGame: ""
+    onMatchChanged: if (match) { stripDay = F.dayLabel(match.start); stripGame = match.game }
+    readonly property var allMatches: App.library.matches || []
+    readonly property var gameOptions: {
+        const out = []
+        for (const m of allMatches)
+            if (!out.some(g => g.game === m.game)) out.push({ game: m.game, label: F.gameName(m.game) })
+        return out
+    }
+    readonly property var dayOptions: {
+        const out = []
+        for (const m of allMatches) {
+            if (stripGame && m.game !== stripGame) continue
+            const d = F.dayLabel(m.start)
+            const o = out.find(x => x.day === d)
+            if (o) o.count++
+            else out.push({ day: d, count: 1 })
+        }
+        return out.map(o => ({ day: o.day, label: o.day + " (" + o.count + ")" }))
+    }
+    readonly property var stripMatches: allMatches.filter(m => (!stripGame || m.game === stripGame) && F.dayLabel(m.start) === stripDay)
+    // Eventos do vídeo em ordem (anterior/próximo).
+    readonly property var markerTimes: media ? media.markers.map(m => m.t).sort((a, b) => a - b) : []
+    function prevEvent() {
+        const before = markerTimes.filter(t => t - 3 < position - 1.5)
+        seek(before.length ? Math.max(0, before[before.length - 1] - 3) : 0)
+    }
+    function nextEvent() {
+        const after = markerTimes.find(t => t - 3 > position + 0.5)
+        if (after !== undefined) seek(after - 3)
+    }
+    function setRate(r) { player.playbackRate = r }
     property var trim: null // { a, b } em segundos
     property bool trimming: false
     readonly property real duration: player.duration > 0 ? player.duration / 1000 : (media ? Math.max(0, win.durationOf(media)) : 0)
@@ -96,27 +130,7 @@ FocusScope {
             visible: !p.fullscreen
             spacing: 10
             AButton { text: "Voltar"; iconName: "back"; onClicked: win.current = null }
-            Item {
-                implicitWidth: 38
-                implicitHeight: 38
-                Rectangle {
-                    anchors.fill: parent
-                    visible: p.hasInfo
-                    radius: 19
-                    color: Theme.card
-                    border.color: p.info.result === "Win" ? Theme.assist : p.info.result === "Lose" ? Theme.kill : Theme.line
-                    border.width: 2
-                    clip: true
-                    Image {
-                        anchors.fill: parent
-                        anchors.margins: 2
-                        source: p.info.championIcon || ""
-                        sourceSize: Qt.size(76, 76)
-                        fillMode: Image.PreserveAspectCrop
-                    }
-                }
-                GameAvatar { anchors.centerIn: parent; visible: !p.hasInfo; game: p.media ? p.media.game : ""; iconUrl: p.media ? win.gameIcon(p.media.game) : ""; size: 36 }
-            }
+            MatchAvatar { match: p.match; size: 38 }
             ColumnLayout {
                 spacing: 1
                 Layout.fillWidth: true
@@ -186,79 +200,118 @@ FocusScope {
             AButton { text: "Excluir"; iconName: "trash"; danger: true; onClicked: win.confirmDelete(p.media) }
         }
 
-        // Vídeos desta partida (partida completa + clipes), como no Outplayed.
-        ListView {
-            id: strip
-            visible: !p.fullscreen && !!p.match && p.match.clips.length > 1
+        // Partidas (sessões de jogo) do dia e do jogo escolhidos, como no Outplayed. Os clipes ficam na aba Clipes.
+        RowLayout {
+            visible: !p.fullscreen && p.dayOptions.length > 0
             Layout.fillWidth: true
-            Layout.preferredHeight: 66
-            orientation: ListView.Horizontal
-            spacing: 8
-            clip: true
-            boundsBehavior: Flickable.StopAtBounds
-            model: p.match ? p.match.clips : []
-            FastWheel { horizontal: true }
-            delegate: AbstractButton {
-                id: mini
-                required property var modelData
-                readonly property bool on: !!p.media && modelData.id === p.media.id
-                width: 224
-                height: 66
-                hoverEnabled: true
-                onClicked: win.openClip(modelData)
-                background: Rectangle {
-                    radius: 10
-                    color: mini.on ? Theme.cardHi : mini.hovered ? Theme.card : Theme.panel
-                    border.color: mini.on ? Theme.accent : Theme.line
+            spacing: 10
+            ColumnLayout {
+                spacing: 6
+                Layout.alignment: Qt.AlignTop
+                ComboBox {
+                    id: dayBox
+                    Layout.preferredWidth: 190
+                    model: p.dayOptions
+                    textRole: "label"
+                    currentIndex: Math.max(0, p.dayOptions.findIndex(d => d.day === p.stripDay))
+                    onActivated: index => p.stripDay = p.dayOptions[index].day
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Dia"
                 }
-                contentItem: RowLayout {
-                    spacing: 8
-                    Rectangle {
-                        Layout.leftMargin: 6
-                        Layout.preferredWidth: 96
-                        Layout.preferredHeight: 54
-                        radius: 6
-                        color: Theme.card
-                        clip: true
-                        Image {
-                            anchors.fill: parent
-                            source: win.thumbOf(mini.modelData)
-                            fillMode: Image.PreserveAspectCrop
-                            asynchronous: true
-                            sourceSize.width: 200
-                        }
-                        Rectangle {
-                            anchors { right: parent.right; bottom: parent.bottom; margins: 4 }
-                            radius: 4; height: 15; width: miniDur.implicitWidth + 8
-                            color: "#cc000000"
-                            Text { id: miniDur; anchors.centerIn: parent; text: F.dur(win.durationOf(mini.modelData)); color: "white"; font.pixelSize: 10 }
-                        }
+                ComboBox {
+                    Layout.preferredWidth: 190
+                    model: p.gameOptions
+                    textRole: "label"
+                    currentIndex: Math.max(0, p.gameOptions.findIndex(g => g.game === p.stripGame))
+                    onActivated: index => {
+                        p.stripGame = p.gameOptions[index].game
+                        if (!p.dayOptions.some(d => d.day === p.stripDay) && p.dayOptions.length)
+                            p.stripDay = p.dayOptions[0].day
                     }
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        Layout.rightMargin: 8
-                        spacing: 3
-                        RowLayout {
-                            spacing: 5
-                            EventBadge {
-                                label: mini.modelData.label
-                                icon: F.clipIcon(mini.modelData)
-                                color: Theme.kindColor(F.kindOf(mini.modelData))
-                                size: 18
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Jogo"
+                }
+            }
+            ListView {
+                id: strip
+                Layout.fillWidth: true
+                Layout.preferredHeight: 76
+                orientation: ListView.Horizontal
+                spacing: 8
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                model: p.stripMatches
+                ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded; height: 6 }
+                FastWheel { horizontal: true }
+                delegate: AbstractButton {
+                    id: mini
+                    required property var modelData
+                    required property int index
+                    readonly property var info: modelData.info || {}
+                    readonly property var main: F.matchMain(modelData)
+                    readonly property bool on: !!p.match && modelData.id === p.match.id
+                    width: 250
+                    height: 70
+                    hoverEnabled: true
+                    onClicked: win.openMatch(modelData)
+                    background: Rectangle {
+                        radius: 10
+                        color: mini.on ? Theme.cardHi : mini.hovered ? Theme.card : Theme.panel
+                        border.color: mini.on ? Theme.accent : Theme.line
+                    }
+                    contentItem: RowLayout {
+                        spacing: 8
+                        Rectangle {
+                            Layout.leftMargin: 6
+                            Layout.preferredWidth: 104
+                            Layout.preferredHeight: 58
+                            radius: 6
+                            color: Theme.card
+                            clip: true
+                            Image {
+                                anchors.fill: parent
+                                source: mini.main ? win.thumbOf(mini.main) : ""
+                                fillMode: Image.PreserveAspectCrop
+                                asynchronous: true
+                                sourceSize.width: 220
+                            }
+                            Rectangle {
+                                anchors { right: parent.right; bottom: parent.bottom; margins: 4 }
+                                visible: !!mini.main
+                                radius: 4; height: 15; width: miniDur.implicitWidth + 8
+                                color: "#cc000000"
+                                Text { id: miniDur; anchors.centerIn: parent; text: mini.main ? F.dur(win.durationOf(mini.main)) : ""; color: "white"; font.pixelSize: 10 }
+                            }
+                        }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.rightMargin: 8
+                            spacing: 2
+                            RowLayout {
+                                spacing: 6
+                                MatchAvatar { match: mini.modelData; size: 20 }
+                                Text {
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                    text: mini.info.champion || ("Partida " + (p.stripMatches.length - mini.index))
+                                    color: Theme.text
+                                    font.pixelSize: 12
+                                    font.weight: Font.DemiBold
+                                }
                             }
                             Text {
                                 Layout.fillWidth: true
                                 elide: Text.ElideRight
-                                text: F.chipText(mini.modelData)
-                                color: Theme.text
-                                font.pixelSize: 12
-                                font.weight: Font.DemiBold
+                                text: mini.info.kills !== undefined ? F.kda(mini.info) + (F.resultText(mini.info) ? " · " + F.resultText(mini.info) : "")
+                                                                    : F.plural(mini.modelData.clips.length, "vídeo", "vídeos")
+                                color: mini.info.result === "Win" ? Theme.assist : mini.info.result === "Lose" ? Theme.kill : Theme.muted
+                                font.pixelSize: 11
                             }
-                        }
-                        Text {
-                            text: mini.modelData.matchTime >= 0 ? F.dur(mini.modelData.matchTime) + " na partida" : F.time(mini.modelData.created)
-                            color: Theme.muted
-                            font.pixelSize: 11
+                            Text {
+                                text: F.time(mini.modelData.start) + " – " + F.time(mini.modelData.end)
+                                color: Theme.faint
+                                font.pixelSize: 11
+                            }
                         }
                     }
                 }
@@ -341,10 +394,32 @@ FocusScope {
                         Layout.fillWidth: true
                         Layout.leftMargin: p.fullscreen ? 16 : 0
                         Layout.rightMargin: p.fullscreen ? 16 : 0
-                        Layout.preferredHeight: 30
+                        Layout.preferredHeight: 46
+                        // Marcas de tempo, como no Outplayed: o passo cresce com a duração (~10 marcas).
+                        readonly property real tick: {
+                            const steps = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800]
+                            return steps.find(s => p.duration / s <= 12) || 3600
+                        }
+                        Repeater {
+                            model: p.duration > 0 ? Math.floor(p.duration / timeline.tick) + 1 : 0
+                            Item {
+                                required property int index
+                                readonly property real t: index * timeline.tick
+                                x: t / p.duration * timeline.width
+                                y: timeline.height - 14
+                                Rectangle { x: 0; y: -5; width: 1; height: 4; color: Theme.faint }
+                                Text {
+                                    x: index === 0 ? 0 : -width / 2
+                                    visible: x + parent.x + width <= timeline.width
+                                    text: timeline.tick >= 60 ? Math.round(parent.t / 60) + "m" : F.dur(parent.t)
+                                    color: Theme.faint
+                                    font.pixelSize: 10
+                                }
+                            }
+                        }
                         Rectangle {
                             id: track
-                            anchors.verticalCenter: parent.verticalCenter
+                            y: 10
                             width: parent.width
                             height: 6
                             radius: 3
@@ -352,7 +427,7 @@ FocusScope {
                         }
                         Rectangle {
                             visible: p.trim !== null && p.duration > 0
-                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.verticalCenter: track.verticalCenter
                             x: p.trim ? p.trim.a / p.duration * parent.width : 0
                             width: p.trim ? (p.trim.b - p.trim.a) / p.duration * parent.width : 0
                             height: 14
@@ -361,7 +436,7 @@ FocusScope {
                             border.color: Theme.accent
                         }
                         Rectangle {
-                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.verticalCenter: track.verticalCenter
                             width: p.duration > 0 ? p.position / p.duration * parent.width : 0
                             height: 6
                             radius: 3
@@ -383,7 +458,7 @@ FocusScope {
                                 label: modelData.label
                                 size: markArea.containsMouse ? 24 : 20
                                 x: modelData.t / p.duration * timeline.width - size / 2
-                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.verticalCenter: track.verticalCenter
                                 border.color: Theme.bg
                                 border.width: 1.5
                                 z: markArea.containsMouse ? 2 : 1
@@ -406,11 +481,77 @@ FocusScope {
                         Layout.rightMargin: p.fullscreen ? 16 : 0
                         Layout.bottomMargin: p.fullscreen ? 12 : 0
                         spacing: 10
+                        Text { text: F.precise(p.position) + " / " + F.dur(p.duration); color: Theme.muted; font.pixelSize: 13; Layout.preferredWidth: 120 }
+                        Item { Layout.fillWidth: true }
+                        AButton {
+                            flat: true
+                            iconName: "skipBack"
+                            enabled: p.markerTimes.length > 0
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Evento anterior"
+                            onClicked: p.prevEvent()
+                        }
+                        // Clique: volta 10 s. Segurando: volta acelerado.
+                        AButton {
+                            id: rewindButton
+                            property int repeats: 0
+                            flat: true
+                            iconName: "rewind"
+                            autoRepeat: true
+                            autoRepeatDelay: 350
+                            autoRepeatInterval: 70
+                            onPressedChanged: if (pressed) repeats = 0
+                            onClicked: { p.seek(p.position - (repeats++ === 0 && !pressed ? 10 : 1)) }
+                            ToolTip.visible: hovered && !pressed
+                            ToolTip.text: "Voltar 10 s (segure para voltar acelerado)"
+                        }
                         AButton {
                             iconName: player.playbackState === MediaPlayer.PlayingState ? "pause" : "play"
                             onClicked: player.playbackState === MediaPlayer.PlayingState ? player.pause() : player.play()
                         }
-                        Text { text: F.precise(p.position) + " / " + F.dur(p.duration); color: Theme.muted; font.pixelSize: 13 }
+                        // Clique: avança 10 s. Segurando: avança acelerado.
+                        AButton {
+                            property int repeats: 0
+                            flat: true
+                            iconName: "fastForward"
+                            autoRepeat: true
+                            autoRepeatDelay: 350
+                            autoRepeatInterval: 70
+                            onPressedChanged: if (pressed) repeats = 0
+                            onClicked: { p.seek(p.position + (repeats++ === 0 && !pressed ? 10 : 1)) }
+                            ToolTip.visible: hovered && !pressed
+                            ToolTip.text: "Avançar 10 s (segure para avançar acelerado)"
+                        }
+                        AButton {
+                            flat: true
+                            iconName: "skipForward"
+                            enabled: p.markerTimes.length > 0
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Próximo evento"
+                            onClicked: p.nextEvent()
+                        }
+                        AButton {
+                            id: speedButton
+                            flat: true
+                            text: player.playbackRate + "x"
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Velocidade"
+                            onClicked: speedMenu.open()
+                            Menu {
+                                id: speedMenu
+                                y: -implicitHeight - 4
+                                Repeater {
+                                    model: [0.25, 0.5, 1, 1.5, 2, 4]
+                                    MenuItem {
+                                        required property var modelData
+                                        text: modelData + "x"
+                                        checkable: true
+                                        checked: player.playbackRate === modelData
+                                        onTriggered: p.setRate(modelData)
+                                    }
+                                }
+                            }
+                        }
                         Item { Layout.fillWidth: true }
                         AButton {
                             id: muteButton

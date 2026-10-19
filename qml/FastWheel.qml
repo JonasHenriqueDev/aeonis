@@ -4,7 +4,12 @@ import QtQuick
 // padrão do Qt (que rola pouco e devagar no desktop). Use dentro de um ListView/Flickable.
 WheelHandler {
     id: h
-    property Flickable flick: parent
+    // Dentro de um ListView/Flickable o handler vai para o contentItem: sobe até achar o Flickable.
+    property var flick: {
+        for (let it = parent; it; it = it.parent)
+            if (it.contentItem !== undefined && it.flickableDirection !== undefined) return it
+        return null
+    }
     property bool horizontal: false
     property real step: 160 // px por clique da roda
     property real target: 0
@@ -26,6 +31,7 @@ WheelHandler {
     function clamp(v) { const b = bounds(); return Math.max(b[0], Math.min(v, b[1])) }
 
     onWheel: event => {
+        if (!flick) return
         const now = horizontal ? flick.contentX : flick.contentY
         const delta = event.pixelDelta.y !== 0 || event.pixelDelta.x !== 0
                       ? (horizontal && event.pixelDelta.x !== 0 ? event.pixelDelta.x : event.pixelDelta.y)

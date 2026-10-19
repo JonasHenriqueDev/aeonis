@@ -20,6 +20,8 @@ QList<GameDef> builtIn();
 QList<GameDef> parseCustom(const QString &text);
 /// Personalizados primeiro (podem sobrepor os embutidos).
 QList<GameDef> all(const QString &customGames);
+/// Nome amigável de um executável (ProductName/FileDescription da versão do arquivo; senão o nome do arquivo).
+QString displayName(const QString &exePath);
 
 } // namespace GameCatalog
 

@@ -2,6 +2,7 @@
 #include "app/Hotkeys.h"
 #include "audio/AudioCapture.h"
 #include "capture/Monitors.h"
+#include "games/GameCatalog.h"
 
 namespace aeonis::SettingsSchema {
 
@@ -68,6 +69,13 @@ QVariantList fields(const Settings &s)
                                option(20, QStringLiteral("Ultra — 20 Mbps")),
                                option(35, QStringLiteral("Máxima — 35 Mbps"))};
 
+    const QVariantList gameFilters{option(QStringLiteral("Todos"), QStringLiteral("Todos os jogos reconhecidos")),
+                                   option(QStringLiteral("Excluir"), QStringLiteral("Todos, exceto os escolhidos")),
+                                   option(QStringLiteral("Somente"), QStringLiteral("Só os jogos escolhidos"))};
+    QVariantList gameNames;
+    for (const GameDef &g : GameCatalog::all(s.customGames))
+        gameNames.append(option(g.name, g.name));
+
     QVariantList out;
     out << field("OutputDir", "Gravação", "Pasta dos vídeos", "Onde os clipes e partidas são salvos (uma subpasta por jogo).", "folder", s.outputDir)
         << field("Mode", "Gravação", "Modo", "Somente destaques: mantém só um buffer curto e salva clipes. Partida completa + destaques: grava a partida inteira e também gera os clipes de destaque. Somente partida completa: grava a partida inteira e marca os destaques na linha do tempo, sem criar vídeos separados.", "select", toString(s.mode), modes)
@@ -93,7 +101,9 @@ QVariantList fields(const Settings &s)
         << field("Notifications", "Geral", "Notificações", "Avisos do Windows ao detectar jogo, salvar clipe ou gravação. Falhas são sempre avisadas.", "bool", s.notifications)
         << field("OpenMatchOnEnd", "Geral", "Abrir a partida ao terminar", "Quando o jogo fecha, abre o Aeonis direto na partida que acabou de ser gravada, para analisar.", "bool", s.openMatchOnEnd)
         << field("AutoUpdate", "Geral", "Atualizar automaticamente", "Ao abrir o Aeonis (e uma vez por dia), baixa e instala sozinho a versão nova do GitHub. Durante um jogo ou gravação, espera terminar. Desligado, só verifica quando você pedir em Sobre.", "bool", s.autoUpdate)
-        << field("CustomGames", "Geral", "Jogos personalizados", "Um por linha: Nome=executavel.exe;outro.exe", "multiline", s.customGames);
+        << field("GameFilter", "Jogos", "Quais jogos gravar", "Todos: grava qualquer jogo reconhecido. Exceto os escolhidos: ignora os jogos escolhidos abaixo. Só os escolhidos: grava apenas eles.", "select", s.gameFilter, gameFilters)
+        << field("GameList", "Jogos", "Jogos escolhidos", "Os jogos ignorados (ou os únicos gravados), conforme a opção acima.", "games", s.gameList, gameNames)
+        << field("CustomGames", "Jogos", "Jogos personalizados", "Jogos que o Aeonis não reconhece sozinho: escolha o executável (.exe) do jogo.", "customgames", s.customGames);
     return out;
 }
 
@@ -134,6 +144,8 @@ bool apply(Settings &s, const QVariantMap &values, QString *error)
         else if (k == QLatin1String("AutoUpdate")) u.autoUpdate = v.toBool();
         else if (k == QLatin1String("OpenMatchOnEnd")) u.openMatchOnEnd = v.toBool();
         else if (k == QLatin1String("CustomGames")) u.customGames = v.toString();
+        else if (k == QLatin1String("GameFilter")) u.gameFilter = v.toString();
+        else if (k == QLatin1String("GameList")) u.gameList = v.toStringList();
     }
     if (u.hotkeySaveClip.compare(u.hotkeyToggleRecording, Qt::CaseInsensitive) == 0) {
         *error = QStringLiteral("Os dois atalhos não podem ser iguais.");
