@@ -12,8 +12,11 @@ Window {
     flags: Qt.Window | Qt.FramelessWindowHint
     color: "transparent"
 
-    readonly property real progress: Updater.progress
-    readonly property bool installing: Updater.busy && progress < 0
+    // O Updater pode sumir antes da janela quando o app fecha para o instalador rodar.
+    readonly property real progress: Updater ? Updater.progress : -1
+    readonly property bool installing: Updater ? Updater.busy && progress < 0 : true
+    readonly property string fromVersion: Updater ? Updater.version : ""
+    readonly property string toVersion: Updater ? Updater.newVersion : ""
 
     Rectangle {
         anchors.fill: parent
@@ -103,7 +106,7 @@ Window {
             Text {
                 width: parent.width
                 horizontalAlignment: Text.AlignHCenter
-                text: splash.progress >= 0 ? Math.round(splash.progress * 100) + "%  ·  versão " + Updater.newVersion
+                text: splash.progress >= 0 ? Math.round(splash.progress * 100) + "%  ·  versão " + splash.toVersion
                                            : "O Aeonis vai reabrir sozinho em instantes."
                 color: Theme.muted
                 font.family: Theme.font
@@ -114,7 +117,7 @@ Window {
 
         Text {
             anchors { bottom: parent.bottom; horizontalCenter: parent.horizontalCenter; bottomMargin: 14 }
-            text: Updater.version + "  →  " + Updater.newVersion
+            text: splash.fromVersion + "  →  " + splash.toVersion
             color: Theme.faint
             font.family: Theme.font
             font.pixelSize: 11
