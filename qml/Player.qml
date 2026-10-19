@@ -15,7 +15,14 @@ FocusScope {
     readonly property real duration: player.duration > 0 ? player.duration / 1000 : (media ? Math.max(0, win.durationOf(media)) : 0)
     readonly property real position: player.position / 1000
     readonly property bool fullscreen: win.playerFullscreen
+    property bool idle: false // tela cheia sem mexer o mouse: esconde controles e cursor
+    readonly property bool controlsVisible: !fullscreen || !idle || player.playbackState !== MediaPlayer.PlayingState
+                                            || trim !== null || controlsHover.hovered
     focus: true
+    onFullscreenChanged: wake()
+
+    function wake() { idle = false; if (fullscreen) idleTimer.restart() }
+    Timer { id: idleTimer; interval: 2500; onTriggered: p.idle = true }
     Component.onCompleted: {
         forceActiveFocus()
         if (media)
@@ -39,6 +46,7 @@ FocusScope {
     }
 
     Keys.onPressed: event => {
+        wake()
         if (event.key === Qt.Key_Escape) { if (fullscreen) win.setPlayerFullscreen(false); else if (trim) trim = null; else win.current = null }
         else if (event.key === Qt.Key_F || event.key === Qt.Key_F11) win.setPlayerFullscreen(!fullscreen)
         else if (event.key === Qt.Key_Space) { player.playbackState === MediaPlayer.PlayingState ? player.pause() : player.play() }
@@ -126,14 +134,17 @@ FocusScope {
             Layout.fillHeight: true
             spacing: 16
 
-            ColumnLayout {
+            // Vídeo + controles. Em tela cheia o vídeo ocupa tudo e os controles ficam por cima,
+            // sumindo depois de um tempo sem mexer o mouse (enquanto toca).
+            Item {
+                id: stage
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                spacing: 10
 
                 Rectangle {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    anchors { left: parent.left; right: parent.right; top: parent.top }
+                    anchors.bottom: p.fullscreen ? parent.bottom : controls.top
+                    anchors.bottomMargin: p.fullscreen ? 0 : 10
                     radius: p.fullscreen ? 0 : Theme.radius
                     color: "black"
                     clip: true
@@ -143,6 +154,9 @@ FocusScope {
                     }
                     MouseArea {
                         anchors.fill: parent
+                        hoverEnabled: p.fullscreen
+                        cursorShape: p.controlsVisible ? Qt.ArrowCursor : Qt.BlankCursor
+                        onPositionChanged: p.wake()
                         onClicked: player.playbackState === MediaPlayer.PlayingState ? player.pause() : player.play()
                         onDoubleClicked: win.setPlayerFullscreen(!p.fullscreen)
                     }
@@ -164,129 +178,151 @@ FocusScope {
                     }
                 }
 
-                // Linha do tempo com marcadores de eventos e a faixa do corte
-                Item {
-                    id: timeline
-                    Layout.fillWidth: true
-                    Layout.leftMargin: p.fullscreen ? 16 : 0
-                    Layout.rightMargin: p.fullscreen ? 16 : 0
-                    Layout.preferredHeight: 26
-                    Rectangle {
-                        id: track
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: parent.width
-                        height: 6
-                        radius: 3
-                        color: Theme.cardHi
+                // Sombra atrás dos controles em tela cheia, para lerem sobre o vídeo.
+                Rectangle {
+                    visible: p.fullscreen
+                    anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+                    height: controls.height + 60
+                    opacity: controls.opacity
+                    gradient: Gradient {
+                        GradientStop { position: 0; color: "transparent" }
+                        GradientStop { position: 1; color: Qt.rgba(0, 0, 0, 0.75) }
                     }
-                    Rectangle {
-                        visible: p.trim !== null && p.duration > 0
-                        anchors.verticalCenter: parent.verticalCenter
-                        x: p.trim ? p.trim.a / p.duration * parent.width : 0
-                        width: p.trim ? (p.trim.b - p.trim.a) / p.duration * parent.width : 0
-                        height: 14
-                        radius: 4
-                        color: Qt.rgba(0.545, 0.36, 0.965, 0.35)
-                        border.color: Theme.accent
-                    }
-                    Rectangle {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: p.duration > 0 ? p.position / p.duration * parent.width : 0
-                        height: 6
-                        radius: 3
-                        gradient: Gradient {
-                            orientation: Gradient.Horizontal
-                            GradientStop { position: 0; color: Theme.gradA }
-                            GradientStop { position: 1; color: Theme.gradB }
-                        }
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        onPressed: mouse => p.seek(mouse.x / width * p.duration)
-                        onPositionChanged: mouse => { if (pressed) p.seek(mouse.x / width * p.duration) }
-                    }
-                    Repeater {
-                        model: p.media && p.duration > 0 ? p.media.markers : []
-                        delegate: Rectangle {
-                            required property var modelData
-                            x: modelData.t / p.duration * timeline.width - 6
+                }
+
+                ColumnLayout {
+                    id: controls
+                    anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+                    spacing: 10
+                    opacity: p.controlsVisible ? 1 : 0
+                    visible: opacity > 0
+                    Behavior on opacity { NumberAnimation { duration: 250 } }
+                    HoverHandler { id: controlsHover }
+
+                    // Linha do tempo com marcadores de eventos e a faixa do corte
+                    Item {
+                        id: timeline
+                        Layout.fillWidth: true
+                        Layout.leftMargin: p.fullscreen ? 16 : 0
+                        Layout.rightMargin: p.fullscreen ? 16 : 0
+                        Layout.preferredHeight: 26
+                        Rectangle {
+                            id: track
                             anchors.verticalCenter: parent.verticalCenter
-                            width: 12; height: 12; radius: 6
-                            color: Theme.kindColor(F.labelKind(modelData.label))
-                            border.color: "white"
-                            border.width: 1.5
-                            ToolTip.visible: markArea.containsMouse
-                            ToolTip.text: modelData.label + " · " + F.dur(modelData.t)
-                            MouseArea {
-                                id: markArea
-                                anchors.fill: parent
-                                anchors.margins: -4
-                                hoverEnabled: true
-                                onClicked: { p.seek(Math.max(0, parent.modelData.t - 3)); player.play() }
+                            width: parent.width
+                            height: 6
+                            radius: 3
+                            color: Theme.cardHi
+                        }
+                        Rectangle {
+                            visible: p.trim !== null && p.duration > 0
+                            anchors.verticalCenter: parent.verticalCenter
+                            x: p.trim ? p.trim.a / p.duration * parent.width : 0
+                            width: p.trim ? (p.trim.b - p.trim.a) / p.duration * parent.width : 0
+                            height: 14
+                            radius: 4
+                            color: Qt.rgba(0.545, 0.36, 0.965, 0.35)
+                            border.color: Theme.accent
+                        }
+                        Rectangle {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: p.duration > 0 ? p.position / p.duration * parent.width : 0
+                            height: 6
+                            radius: 3
+                            gradient: Gradient {
+                                orientation: Gradient.Horizontal
+                                GradientStop { position: 0; color: Theme.gradA }
+                                GradientStop { position: 1; color: Theme.gradB }
+                            }
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            onPressed: mouse => p.seek(mouse.x / width * p.duration)
+                            onPositionChanged: mouse => { if (pressed) p.seek(mouse.x / width * p.duration) }
+                        }
+                        Repeater {
+                            model: p.media && p.duration > 0 ? p.media.markers : []
+                            delegate: Rectangle {
+                                required property var modelData
+                                x: modelData.t / p.duration * timeline.width - 6
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 12; height: 12; radius: 6
+                                color: Theme.kindColor(F.labelKind(modelData.label))
+                                border.color: "white"
+                                border.width: 1.5
+                                ToolTip.visible: markArea.containsMouse
+                                ToolTip.text: modelData.label + " · " + F.dur(modelData.t)
+                                MouseArea {
+                                    id: markArea
+                                    anchors.fill: parent
+                                    anchors.margins: -4
+                                    hoverEnabled: true
+                                    onClicked: { p.seek(Math.max(0, parent.modelData.t - 3)); player.play() }
+                                }
                             }
                         }
                     }
-                }
 
-                // Controles
-                RowLayout {
-                    Layout.leftMargin: p.fullscreen ? 16 : 0
-                    Layout.rightMargin: p.fullscreen ? 16 : 0
-                    Layout.bottomMargin: p.fullscreen ? 12 : 0
-                    spacing: 10
-                    AButton {
-                        iconName: player.playbackState === MediaPlayer.PlayingState ? "pause" : "play"
-                        onClicked: player.playbackState === MediaPlayer.PlayingState ? player.pause() : player.play()
-                    }
-                    Text { text: F.precise(p.position) + " / " + F.dur(p.duration); color: Theme.muted; font.pixelSize: 13 }
-                    Item { Layout.fillWidth: true }
-                    AButton {
-                        id: muteButton
-                        property bool muted: false
-                        flat: true
-                        iconName: muted ? "mute" : "volume"
-                        onClicked: muted = !muted
-                    }
-                    Slider { id: volumeSlider; from: 0; to: 1; value: 0.8; Layout.preferredWidth: 120 }
-                    AButton {
-                        flat: true
-                        iconName: p.fullscreen ? "shrink" : "expand"
-                        ToolTip.visible: hovered
-                        ToolTip.text: p.fullscreen ? "Sair da tela cheia (Esc)" : "Tela cheia (F)"
-                        onClicked: p.setFullscreenToggle()
-                    }
-                }
-
-                // Corte
-                Rectangle {
-                    visible: p.trim !== null
-                    Layout.fillWidth: true
-                    Layout.leftMargin: p.fullscreen ? 16 : 0
-                    Layout.rightMargin: p.fullscreen ? 16 : 0
-                    implicitHeight: trimRow.implicitHeight + 20
-                    radius: 10
-                    color: Theme.panel
-                    border.color: Theme.line
+                    // Controles
                     RowLayout {
-                        id: trimRow
-                        anchors.fill: parent
-                        anchors.margins: 10
+                        Layout.leftMargin: p.fullscreen ? 16 : 0
+                        Layout.rightMargin: p.fullscreen ? 16 : 0
+                        Layout.bottomMargin: p.fullscreen ? 12 : 0
                         spacing: 10
-                        Icon { name: "scissors"; size: 18 }
-                        Text { text: "Início"; color: Theme.muted }
-                        Text { text: p.trim ? F.precise(p.trim.a) : ""; color: Theme.text; font.bold: true }
-                        AButton { text: "Marcar aqui"; onClicked: p.setMark("a") }
-                        Text { text: "Fim"; color: Theme.muted }
-                        Text { text: p.trim ? F.precise(p.trim.b) : ""; color: Theme.text; font.bold: true }
-                        AButton { text: "Marcar aqui"; onClicked: p.setMark("b") }
-                        Item { Layout.fillWidth: true }
-                        Text { text: p.trim ? F.dur(p.trim.b - p.trim.a) + " · sem re-encode" : ""; color: Theme.muted; font.pixelSize: 12 }
-                        AButton { text: "Cancelar"; onClicked: p.trim = null }
                         AButton {
-                            text: p.trimming ? "Cortando…" : "Salvar corte"
-                            primary: true
-                            enabled: !p.trimming
-                            onClicked: { p.trimming = true; App.trim(p.media.path, p.trim.a, p.trim.b) }
+                            iconName: player.playbackState === MediaPlayer.PlayingState ? "pause" : "play"
+                            onClicked: player.playbackState === MediaPlayer.PlayingState ? player.pause() : player.play()
+                        }
+                        Text { text: F.precise(p.position) + " / " + F.dur(p.duration); color: Theme.muted; font.pixelSize: 13 }
+                        Item { Layout.fillWidth: true }
+                        AButton {
+                            id: muteButton
+                            property bool muted: false
+                            flat: true
+                            iconName: muted ? "mute" : "volume"
+                            onClicked: muted = !muted
+                        }
+                        Slider { id: volumeSlider; from: 0; to: 1; value: 0.8; Layout.preferredWidth: 120 }
+                        AButton {
+                            flat: true
+                            iconName: p.fullscreen ? "shrink" : "expand"
+                            ToolTip.visible: hovered
+                            ToolTip.text: p.fullscreen ? "Sair da tela cheia (Esc)" : "Tela cheia (F)"
+                            onClicked: p.setFullscreenToggle()
+                        }
+                    }
+
+                    // Corte
+                    Rectangle {
+                        visible: p.trim !== null
+                        Layout.fillWidth: true
+                        Layout.leftMargin: p.fullscreen ? 16 : 0
+                        Layout.rightMargin: p.fullscreen ? 16 : 0
+                        implicitHeight: trimRow.implicitHeight + 20
+                        radius: 10
+                        color: Theme.panel
+                        border.color: Theme.line
+                        RowLayout {
+                            id: trimRow
+                            anchors.fill: parent
+                            anchors.margins: 10
+                            spacing: 10
+                            Icon { name: "scissors"; size: 18 }
+                            Text { text: "Início"; color: Theme.muted }
+                            Text { text: p.trim ? F.precise(p.trim.a) : ""; color: Theme.text; font.bold: true }
+                            AButton { text: "Marcar aqui"; onClicked: p.setMark("a") }
+                            Text { text: "Fim"; color: Theme.muted }
+                            Text { text: p.trim ? F.precise(p.trim.b) : ""; color: Theme.text; font.bold: true }
+                            AButton { text: "Marcar aqui"; onClicked: p.setMark("b") }
+                            Item { Layout.fillWidth: true }
+                            Text { text: p.trim ? F.dur(p.trim.b - p.trim.a) + " · sem re-encode" : ""; color: Theme.muted; font.pixelSize: 12 }
+                            AButton { text: "Cancelar"; onClicked: p.trim = null }
+                            AButton {
+                                text: p.trimming ? "Cortando…" : "Salvar corte"
+                                primary: true
+                                enabled: !p.trimming
+                                onClicked: { p.trimming = true; App.trim(p.media.path, p.trim.a, p.trim.b) }
+                            }
                         }
                     }
                 }
