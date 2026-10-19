@@ -1,6 +1,6 @@
-cmake_minimum_required(VERSION 3.25)
+﻿cmake_minimum_required(VERSION 3.25)
 
-project(Aeonis VERSION 1.1.0 LANGUAGES CXX)
+project(Aeonis VERSION 1.2.0 LANGUAGES CXX)
 set(AEONIS_RELEASE_VERSION "${PROJECT_VERSION}" CACHE STRING "Versão completa, incluindo sufixo de pré-release")
 
 set(CMAKE_CXX_STANDARD 20)
