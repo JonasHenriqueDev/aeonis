@@ -58,7 +58,8 @@ Type: files; Name: "{app}\Aeonis.dll"
 Type: files; Name: "{app}\Aeonis.deps.json"
 Type: files; Name: "{app}\Aeonis.runtimeconfig.json"
 Type: files; Name: "{app}\createdump.exe"
-Type: files; Name: "{app}\*.dll"
+; Sem "{app}\*.dll": se a instalação for interrompida depois de apagar e antes de copiar, o app não abre
+; mais (aconteceu no loop de atualização da 1.1.0). As DLLs do Qt/MSVC são sobrescritas pelo [Files].
 Type: filesandordirs; Name: "{app}\qml"
 
 [Files]
