@@ -8,6 +8,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   traga a branch para a `main` e envie). Não deixe o trabalho parado em branches separadas nem abra PR,
   a menos que o usuário peça.
 - Textos do app, comentários e mensagens de commit são em português (pt-BR).
+- **Toda versão nova vira release no GitHub**: ao mudar `project(Aeonis VERSION x.y.z)` no `CMakeLists.txt`,
+  rode `scripts/package.ps1`, suba para a `main` e crie a release `vx.y.z` com
+  `gh release create vx.y.z --title "Aeonis x.y.z"` anexando os três arquivos de `dist\`
+  (`Aeonis-Setup-x.y.z.exe`, `Aeonis-x.y.z-portable.zip`, `Aeonis-Portable-x.y.z.exe`) e notas em pt-BR no
+  formato das anteriores (Download, Novidades). A atualização automática do app depende do
+  `Aeonis-Setup-*.exe` na release mais recente.
 
 ## Comandos
 
