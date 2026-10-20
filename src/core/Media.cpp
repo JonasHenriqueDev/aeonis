@@ -184,7 +184,7 @@ double duration(const QString &file)
     return in->duration / double(AV_TIME_BASE);
 }
 
-double thumbnail(const QString &video, const QString &jpg, int width)
+double thumbnail(const QString &video, const QString &jpg, int width, int quality)
 {
     Input in = openInput(video, true);
     if (!in)
@@ -251,7 +251,7 @@ double thumbnail(const QString &video, const QString &jpg, int width)
             int stride[4] = {int(img.bytesPerLine()), 0, 0, 0};
             sws_scale(sws, frame->data, frame->linesize, 0, frame->height, dst, stride);
             sws_freeContext(sws);
-            img.save(jpg, "JPG", 82);
+            img.save(jpg, "JPG", quality);
         }
     }
     av_frame_free(&frame);

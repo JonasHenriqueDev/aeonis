@@ -59,6 +59,8 @@ public:
     Q_INVOKABLE QVariantMap gameFromExe(const QUrl &url) const;
     /// Ícone do jogo: o embutido do catálogo (qrc:/games/...), senão o extraído do executável, senão vazio.
     Q_INVOKABLE QString gameIconUrl(const QString &game) const;
+    /// Gera (em segundo plano) a capa em alta resolução do vídeo; responde com posterReady.
+    Q_INVOKABLE void requestPoster(const QString &id, const QString &path);
 
 signals:
     void statusChanged();
@@ -68,6 +70,7 @@ signals:
     void toast(const QString &text, const QString &kind);
     void navigate(const QString &page);
     void thumbReady(const QString &id, const QString &url, double duration);
+    void posterReady(const QString &id, const QString &url);
     void trimDone(bool ok, const QString &path);
 
 private:

@@ -53,6 +53,16 @@ std::optional<double> duration(const QString &k)
     return ok && d > 0 ? std::optional<double>(d) : std::nullopt;
 }
 
+QString posterPath(const QString &k) { return QDir::toNativeSeparators(Paths::thumbs() + QLatin1Char('/') + k + QStringLiteral("-p.jpg")); }
+
+QString ensurePoster(const QString &video, const QString &k)
+{
+    const QString path = posterPath(k);
+    if (!QFileInfo::exists(path))
+        Media::thumbnail(video, path, 1920, 90);
+    return QFileInfo::exists(path) ? path : QString();
+}
+
 std::optional<double> generate(const QString &video, const QString &k)
 {
     QFile::remove(QDir::toNativeSeparators(Paths::thumbs() + QLatin1Char('/') + k + QStringLiteral(".jpg"))); // formato antigo

@@ -41,6 +41,13 @@ FocusScope {
     function setRate(r) { player.playbackRate = r }
     property bool priming: false // carregando o primeiro quadro (mudo), depois pausa
     property bool started: false // já tocou ou mudou de posição: a capa some
+    property string primedUrl: "" // vídeo cujo primeiro quadro já foi carregado (só uma vez por vídeo)
+    property string poster: ""    // capa em alta resolução (gerada ao abrir; até lá, a miniatura)
+    function togglePlay() {
+        priming = false
+        started = true
+        player.playbackState === MediaPlayer.PlayingState ? player.pause() : player.play()
+    }
     property var trim: null // { a, b } em segundos
     property bool trimming: false
     readonly property real duration: player.duration > 0 ? player.duration / 1000 : (media ? Math.max(0, win.durationOf(media)) : 0)
@@ -63,12 +70,15 @@ FocusScope {
     onMediaChanged: {
         trim = null
         started = win.pendingSeek >= 0
+        poster = ""
+        if (media)
+            App.requestPoster(media.id, media.path)
         if (media && player.source.toString() !== media.url)
             player.source = media.url
     }
 
     function setFullscreenToggle() { win.setPlayerFullscreen(!fullscreen); forceActiveFocus() }
-    function seek(t) { started = true; player.position = Math.max(0, Math.min(duration, t)) * 1000 }
+    function seek(t) { started = true; priming = false; player.position = Math.max(0, Math.min(duration, t)) * 1000 }
     function setMark(which) {
         if (!trim) return
         const t = Object.assign({}, trim)
@@ -81,7 +91,7 @@ FocusScope {
         wake()
         if (event.key === Qt.Key_Escape) { if (fullscreen) win.setPlayerFullscreen(false); else if (trim) trim = null; else if (!embedded) win.current = null }
         else if (event.key === Qt.Key_F || event.key === Qt.Key_F11) win.setPlayerFullscreen(!fullscreen)
-        else if (event.key === Qt.Key_Space) { player.playbackState === MediaPlayer.PlayingState ? player.pause() : player.play() }
+        else if (event.key === Qt.Key_Space) p.togglePlay()
         else if (event.key === Qt.Key_Right) seek(position + 5)
         else if (event.key === Qt.Key_Left) seek(position - 5)
         else if (event.key === Qt.Key_Period) { player.pause(); seek(position + 1 / 60) }
@@ -96,7 +106,8 @@ FocusScope {
         videoOutput: video
         onPlaybackStateChanged: if (playbackState === MediaPlayer.PlayingState && !p.priming) p.started = true
         audioOutput: AudioOutput { id: audio; volume: volumeSlider.value; muted: muteButton.muted || p.priming }
-        onMediaStatusChanged: if (mediaStatus === MediaPlayer.LoadedMedia) {
+        onMediaStatusChanged: if (mediaStatus === MediaPlayer.LoadedMedia && p.media && p.primedUrl !== p.media.url) {
+            p.primedUrl = p.media.url
             if (win.pendingSeek >= 0) {
                 p.seek(win.pendingSeek)
                 win.pendingSeek = -1
@@ -115,6 +126,10 @@ FocusScope {
     Connections {
         target: App
         function onTrimDone(ok, path) { p.trimming = false; if (ok) p.trim = null }
+    }
+    Connections {
+        target: App
+        function onPosterReady(id, url) { if (p.media && p.media.id === id) p.poster = url }
     }
     Connections {
         target: video.videoSink
@@ -244,7 +259,7 @@ FocusScope {
                     Image {
                         anchors.fill: parent
                         visible: !p.started && p.media !== null && status === Image.Ready
-                        source: p.media ? win.thumbOf(p.media) : ""
+                        source: p.poster !== "" ? p.poster : p.media ? win.thumbOf(p.media) : ""
                         fillMode: Image.PreserveAspectFit
                         asynchronous: true
                     }
@@ -253,7 +268,6 @@ FocusScope {
                         hoverEnabled: p.fullscreen
                         cursorShape: p.controlsVisible ? Qt.ArrowCursor : Qt.BlankCursor
                         onPositionChanged: p.wake()
-                        onClicked: player.playbackState === MediaPlayer.PlayingState ? player.pause() : player.play()
                         onDoubleClicked: win.setPlayerFullscreen(!p.fullscreen)
                     }
                     Column {
@@ -414,7 +428,7 @@ FocusScope {
                         }
                         AButton {
                             iconName: player.playbackState === MediaPlayer.PlayingState ? "pause" : "play"
-                            onClicked: player.playbackState === MediaPlayer.PlayingState ? player.pause() : player.play()
+                            onClicked: p.togglePlay()
                         }
                         // Clique: avança 10 s. Segurando: avança acelerado.
                         AButton {

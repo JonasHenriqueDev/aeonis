@@ -155,6 +155,21 @@ QVariantMap Backend::gameFromExe(const QUrl &url) const
     return m;
 }
 
+void Backend::requestPoster(const QString &id, const QString &path)
+{
+    const QString video = safeVideo(path);
+    if (id.isEmpty() || video.isEmpty())
+        return;
+    if (QFileInfo::exists(MediaCache::posterPath(id))) {
+        emit posterReady(id, QUrl::fromLocalFile(MediaCache::posterPath(id)).toString());
+        return;
+    }
+    runAsync(this, [video, id] { return MediaCache::ensurePoster(video, id); }, [this, id](QString poster) {
+        if (!poster.isEmpty())
+            emit posterReady(id, QUrl::fromLocalFile(poster).toString());
+    });
+}
+
 QString Backend::gameIconUrl(const QString &game) const
 {
     // "Counter-Strike 2" -> counter-strike-2

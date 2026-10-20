@@ -17,6 +17,10 @@ qint64 lastWriteTicks(const QString &file);
 QString thumbPath(const QString &key);
 bool hasThumb(const QString &key);
 std::optional<double> duration(const QString &key);
+/// Capa do player: o mesmo quadro da miniatura na resolução do vídeo (até 1920 px).
+QString posterPath(const QString &key);
+/// Gera a capa se ainda não existe; devolve o caminho (vazio se falhou). Bloqueante.
+QString ensurePoster(const QString &video, const QString &key);
 /// Gera a miniatura e grava a duração (uma abertura do vídeo para os dois).
 std::optional<double> generate(const QString &video, const QString &key);
 

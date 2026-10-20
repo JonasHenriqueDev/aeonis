@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(Aeonis VERSION 1.5.3 LANGUAGES CXX)
+project(Aeonis VERSION 1.5.4 LANGUAGES CXX)
 # A versão vem sempre do project() (não do cache: um valor antigo em cache gerou um app que se dizia
 # 1.0.0 dentro do pacote 1.1.0 e se atualizava em loop). Só o sufixo de pré-release é opcional.
 set(AEONIS_VERSION_SUFFIX "" CACHE STRING "Sufixo de pré-release (ex.: -beta1)")
