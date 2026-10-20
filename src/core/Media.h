@@ -11,7 +11,9 @@ namespace aeonis::Media {
 double duration(const QString &file);
 
 /// Miniatura JPG com `width` px de largura, tirada a ~2 s (ou do primeiro quadro). Devolve a duração.
-double thumbnail(const QString &video, const QString &jpg, int width = 480);
+/// Miniatura de um quadro do meio do vídeo (ponto sorteado de forma estável pelo nome do arquivo,
+/// entre 25% e 60%), pulando quadros escuros (tela de carregamento, transições). Devolve a duração.
+double thumbnail(const QString &video, const QString &jpg, int width = 960);
 
 struct RemuxResult {
     bool ok = false;

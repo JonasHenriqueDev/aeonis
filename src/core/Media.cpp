@@ -207,20 +207,38 @@ double thumbnail(const QString &video, const QString &jpg, int width)
     std::unique_ptr<AVPacket, PacketDeleter> pkt(av_packet_alloc());
     AVFrame *frame = av_frame_alloc();
     bool got = false;
-    for (int attempt = 0; attempt < 2 && !got; ++attempt) {
-        if (attempt == 0 && dur > 2.5)
-            av_seek_frame(in.get(), -1, 2 * AV_TIME_BASE, AVSEEK_FLAG_BACKWARD);
-        else
-            av_seek_frame(in.get(), -1, 0, AVSEEK_FLAG_BACKWARD);
+    // Brilho médio do quadro (plano Y do YUV; outros formatos contam como claros).
+    auto brightness = [](const AVFrame *f) {
+        if (f->format != AV_PIX_FMT_YUV420P && f->format != AV_PIX_FMT_NV12 && f->format != AV_PIX_FMT_YUVJ420P)
+            return 255.0;
+        qint64 sum = 0, n = 0;
+        for (int y = 0; y < f->height; y += 8)
+            for (int x = 0; x < f->width; x += 8, ++n)
+                sum += f->data[0][qint64(y) * f->linesize[0] + x];
+        return n ? double(sum) / n : 255.0;
+    };
+    // Pontos a tentar: um sorteado (estável pelo arquivo) no meio do vídeo e outros de reserva.
+    const uint seed = qHash(QFileInfo(video).fileName());
+    const double first = 0.25 + (seed % 36) / 100.0;
+    const double points[] = {first, 0.5, 0.75, 0.35, 0.15, 0.0};
+    for (double point : points) {
+        const double at = dur > 2.5 ? dur * point : 0;
+        av_seek_frame(in.get(), -1, qint64(at * AV_TIME_BASE), AVSEEK_FLAG_BACKWARD);
         avcodec_flush_buffers(dec);
+        bool decoded = false;
         int reads = 0;
-        while (!got && reads++ < 600 && av_read_frame(in.get(), pkt.get()) >= 0) {
+        while (!decoded && reads++ < 600 && av_read_frame(in.get(), pkt.get()) >= 0) {
             if (pkt->stream_index == vs && avcodec_send_packet(dec, pkt.get()) >= 0)
-                got = avcodec_receive_frame(dec, frame) == 0;
+                decoded = avcodec_receive_frame(dec, frame) == 0;
             av_packet_unref(pkt.get());
         }
-        if (!got && avcodec_send_packet(dec, nullptr) >= 0)
-            got = avcodec_receive_frame(dec, frame) == 0;
+        if (!decoded && avcodec_send_packet(dec, nullptr) >= 0)
+            decoded = avcodec_receive_frame(dec, frame) == 0;
+        if (!decoded)
+            continue;
+        got = true;
+        if (brightness(frame) > 28 || point == 0.0 || dur <= 2.5)
+            break; // claro o bastante (senão tenta o próximo ponto; o último quadro lido fica de reserva)
     }
     if (got && frame->width > 0 && frame->height > 0) {
         const int w = std::min(width, frame->width) & ~1;

@@ -40,6 +40,7 @@ FocusScope {
     }
     function setRate(r) { player.playbackRate = r }
     property bool priming: false // carregando o primeiro quadro (mudo), depois pausa
+    property bool started: false // já tocou ou mudou de posição: a capa some
     property var trim: null // { a, b } em segundos
     property bool trimming: false
     readonly property real duration: player.duration > 0 ? player.duration / 1000 : (media ? Math.max(0, win.durationOf(media)) : 0)
@@ -61,12 +62,13 @@ FocusScope {
 
     onMediaChanged: {
         trim = null
+        started = win.pendingSeek >= 0
         if (media && player.source.toString() !== media.url)
             player.source = media.url
     }
 
     function setFullscreenToggle() { win.setPlayerFullscreen(!fullscreen); forceActiveFocus() }
-    function seek(t) { player.position = Math.max(0, Math.min(duration, t)) * 1000 }
+    function seek(t) { started = true; player.position = Math.max(0, Math.min(duration, t)) * 1000 }
     function setMark(which) {
         if (!trim) return
         const t = Object.assign({}, trim)
@@ -92,6 +94,7 @@ FocusScope {
     MediaPlayer {
         id: player
         videoOutput: video
+        onPlaybackStateChanged: if (playbackState === MediaPlayer.PlayingState && !p.priming) p.started = true
         audioOutput: AudioOutput { id: audio; volume: volumeSlider.value; muted: muteButton.muted || p.priming }
         onMediaStatusChanged: if (mediaStatus === MediaPlayer.LoadedMedia) {
             if (win.pendingSeek >= 0) {
@@ -236,6 +239,14 @@ FocusScope {
                     VideoOutput {
                         id: video
                         anchors.fill: parent
+                    }
+                    // Capa: um quadro do meio do vídeo (a miniatura), até o primeiro play.
+                    Image {
+                        anchors.fill: parent
+                        visible: !p.started && p.media !== null && status === Image.Ready
+                        source: p.media ? win.thumbOf(p.media) : ""
+                        fillMode: Image.PreserveAspectFit
+                        asynchronous: true
                     }
                     MouseArea {
                         anchors.fill: parent

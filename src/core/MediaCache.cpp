@@ -36,7 +36,8 @@ QString key(const QString &file)
     return key(file, QFileInfo(file).size(), lastWriteTicks(file));
 }
 
-QString thumbPath(const QString &k) { return QDir::toNativeSeparators(Paths::thumbs() + QLatin1Char('/') + k + QStringLiteral(".jpg")); }
+// "-m": miniatura de um quadro do meio do vídeo (as antigas, do segundo 2, são refeitas uma vez).
+QString thumbPath(const QString &k) { return QDir::toNativeSeparators(Paths::thumbs() + QLatin1Char('/') + k + QStringLiteral("-m.jpg")); }
 
 static QString durPath(const QString &k) { return Paths::thumbs() + QLatin1Char('/') + k + QStringLiteral(".dur"); }
 
@@ -54,6 +55,7 @@ std::optional<double> duration(const QString &k)
 
 std::optional<double> generate(const QString &video, const QString &k)
 {
+    QFile::remove(QDir::toNativeSeparators(Paths::thumbs() + QLatin1Char('/') + k + QStringLiteral(".jpg"))); // formato antigo
     const double d = Media::thumbnail(video, thumbPath(k));
     if (d <= 0)
         return std::nullopt;
