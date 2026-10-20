@@ -97,7 +97,7 @@ Popup {
                 background: Rectangle { radius: 10; color: item.hovered ? Theme.card : "transparent" }
                 contentItem: RowLayout {
                     spacing: 12
-                    GameAvatar { Layout.leftMargin: 8; game: item.modelData; iconUrl: App.gameIconUrl(item.modelData); size: 32 }
+                    GameAvatar { Layout.leftMargin: 8; game: item.modelData; iconUrl: win.gameIcon(item.modelData); size: 32 }
                     Text {
                         Layout.fillWidth: true
                         elide: Text.ElideRight

@@ -19,6 +19,7 @@
 #include <QGuiApplication>
 #include <QClipboard>
 #include <QProcess>
+#include <QRegularExpression>
 #include <QThreadPool>
 #include <QUrl>
 
@@ -156,6 +157,12 @@ QVariantMap Backend::gameFromExe(const QUrl &url) const
 
 QString Backend::gameIconUrl(const QString &game) const
 {
+    // "Counter-Strike 2" -> counter-strike-2
+    QString slug = game.toLower();
+    slug.replace(QRegularExpression(QStringLiteral("[^a-z0-9]+")), QStringLiteral("-"));
+    slug.remove(QRegularExpression(QStringLiteral("^-+|-+$")));
+    if (!slug.isEmpty() && QFile::exists(QStringLiteral(":/games/%1.png").arg(slug)))
+        return QStringLiteral("qrc:/games/%1.png").arg(slug);
     const QString png = MediaCache::gameIconPath(game);
     return QFileInfo::exists(png) ? QUrl::fromLocalFile(png).toString() : QString();
 }

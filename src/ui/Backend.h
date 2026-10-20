@@ -57,7 +57,7 @@ public:
     Q_INVOKABLE QString pathFromUrl(const QUrl &url) const;
     /// Jogo a partir de um executável escolhido no Explorer: { name, process, icon } (vazio se inválido).
     Q_INVOKABLE QVariantMap gameFromExe(const QUrl &url) const;
-    /// Ícone salvo do jogo (file:///...png) ou vazio.
+    /// Ícone do jogo: o embutido do catálogo (qrc:/games/...), senão o extraído do executável, senão vazio.
     Q_INVOKABLE QString gameIconUrl(const QString &game) const;
 
 signals:

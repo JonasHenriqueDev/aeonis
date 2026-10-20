@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(Aeonis VERSION 1.5.2 LANGUAGES CXX)
+project(Aeonis VERSION 1.5.3 LANGUAGES CXX)
 # A versão vem sempre do project() (não do cache: um valor antigo em cache gerou um app que se dizia
 # 1.0.0 dentro do pacote 1.1.0 e se atualizava em loop). Só o sufixo de pré-release é opcional.
 set(AEONIS_VERSION_SUFFIX "" CACHE STRING "Sufixo de pré-release (ex.: -beta1)")
@@ -105,6 +105,9 @@ qt_add_executable(Aeonis WIN32
     "${CMAKE_CURRENT_BINARY_DIR}/aeonis.rc"
 )
 set_target_properties(Aeonis PROPERTIES OUTPUT_NAME "Aeonis")
+# Ícones dos jogos do catálogo (assets/games/<nome-em-slug>.png, 256 px), em qrc:/games/.
+file(GLOB GAME_ICONS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS assets/games/*.png)
+qt_add_resources(Aeonis game_icons PREFIX "/" BASE assets FILES ${GAME_ICONS})
 qt_add_resources(Aeonis app_icons PREFIX "/" BASE assets FILES
     assets/icons/aeonis-32.png assets/icons/aeonis-64.png assets/icons/aeonis-256.png
     assets/icons/aeonis-recording-32.png assets/icons/aeonis-recording-64.png)

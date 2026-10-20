@@ -92,10 +92,8 @@ ApplicationWindow {
     }
     function thumbOf(c) { thumbTick; const t = thumbs[c.id]; return t && t.url ? t.url : c.thumb }
     function durationOf(c) { thumbTick; const t = thumbs[c.id]; return c.duration >= 0 ? c.duration : (t ? t.duration : -1) }
-    function gameIcon(name) {
-        const g = (lib.games || []).find(x => x.name === name)
-        return g ? g.icon : ""
-    }
+    // Ícone embutido do catálogo ou o extraído do jogo (reavaliado quando a biblioteca muda).
+    function gameIcon(name) { lib; return name ? App.gameIconUrl(name) : "" }
     function matchOf(c) {
         for (const m of (App.library.matches || []))
             for (const x of m.clips)

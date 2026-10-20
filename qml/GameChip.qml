@@ -20,7 +20,7 @@ Rectangle {
         anchors.verticalCenter: parent.verticalCenter
         x: 5
         spacing: 8
-        GameAvatar { game: chip.game; iconUrl: App.gameIconUrl(chip.game); size: 26; radius: 13 }
+        GameAvatar { game: chip.game; iconUrl: win.gameIcon(chip.game); size: 26; radius: 13 }
         ColumnLayout {
             spacing: 0
             Text { text: chip.game; color: Theme.text; font.pixelSize: 13 }
