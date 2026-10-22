@@ -126,6 +126,8 @@ private slots:
         QCOMPARE(custom[1].processes, QStringList({"solo"}));
         const auto all = GameCatalog::all("X=cs2.exe");
         QCOMPARE(all.first().name, QStringLiteral("X")); // personalizados primeiro
+        const auto deadlock = std::find_if(all.begin(), all.end(), [](const GameDef &g) { return g.name == QLatin1String("Deadlock"); });
+        QVERIFY(deadlock != all.end() && deadlock->processes.contains(QStringLiteral("deadlock")));
     }
 
     void highlighterLabels()

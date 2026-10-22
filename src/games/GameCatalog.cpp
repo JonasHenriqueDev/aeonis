@@ -25,7 +25,7 @@ QList<GameDef> builtIn()
         {QStringLiteral("PUBG"), {QStringLiteral("TslGame")}, {}},
         {QStringLiteral("GTA V"), {QStringLiteral("GTA5"), QStringLiteral("GTA5_Enhanced")}, {}},
         {QStringLiteral("Marvel Rivals"), {QStringLiteral("Marvel-Win64-Shipping")}, {}},
-        {QStringLiteral("Deadlock"), {QStringLiteral("project8")}, {}},
+        {QStringLiteral("Deadlock"), {QStringLiteral("deadlock"), QStringLiteral("project8")}, {}}, // project8 = nome dos testes fechados
         {QStringLiteral("Rust"), {QStringLiteral("RustClient")}, {}},
         {QStringLiteral("Escape from Tarkov"), {QStringLiteral("EscapeFromTarkov")}, {}},
         {QStringLiteral("The Finals"), {QStringLiteral("Discovery")}, {}},
