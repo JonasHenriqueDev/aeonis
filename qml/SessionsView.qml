@@ -118,13 +118,14 @@ Item {
             }
         }
 
-        // Faixa de sessões do dia
+        // Faixa de sessões do dia, da mais nova (à esquerda) para a mais antiga
         ListView {
             id: strip
             visible: !sv.fullscreen
             Layout.fillWidth: true
             Layout.preferredHeight: 64
             orientation: ListView.Horizontal
+            layoutDirection: Qt.RightToLeft
             spacing: 8
             clip: true
             boundsBehavior: Flickable.StopAtBounds
