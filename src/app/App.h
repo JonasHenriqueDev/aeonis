@@ -13,8 +13,10 @@
 #include <QObject>
 #include <QSystemTrayIcon>
 #include <QThreadPool>
+#include <QTimer>
 #include <QVariantMap>
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -75,6 +77,8 @@ private:
     void onGameStarted(const GameDef &game, HMONITOR monitor, const QString &exe);
     void onGameStopped(const GameDef &game);
     void startDesktopBufferIfWanted();
+    /// Gravação longa passou de CaptureEngine::PartSeconds: salva a parte e segue numa nova.
+    void splitLongRecording();
     /// Atualização automática: instala a versão encontrada se nada estiver sendo jogado/gravado.
     void installUpdateIfIdle();
     void registerHotkeys();
@@ -101,6 +105,9 @@ private:
     QString m_lastClipSession; // sessão do último clipe salvo (abre a partida ao terminar)
     bool m_starting = false;
     bool m_exiting = false;
+    bool m_splitting = false;
+    QTimer m_splitTimer;
+    std::atomic<bool> m_cancelRecovery{false}; // saída do app interrompe a recuperação de buffers
 };
 
 } // namespace aeonis

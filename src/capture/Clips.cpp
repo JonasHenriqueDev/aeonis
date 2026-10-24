@@ -85,7 +85,7 @@ QString newPath(const QString &outputDir, const QString &game, const QString &la
     const QString base = QStringLiteral("%1_%2_%3").arg(sanitize(game),
         QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd_HH-mm-ss")), sanitize(label));
     QString path = dir + QLatin1Char('\\') + base + QStringLiteral(".mp4");
-    for (int i = 2; QFileInfo::exists(path); ++i)
+    for (int i = 2; QFileInfo::exists(path) || QFileInfo::exists(path + QStringLiteral(".part")); ++i)
         path = dir + QLatin1Char('\\') + QStringLiteral("%1_%2.mp4").arg(base).arg(i);
     return path;
 }
@@ -150,6 +150,22 @@ qint64 unsavedBytes(const QString &outputDir)
         if (!set.contains(norm(f.absoluteFilePath())))
             total += f.size();
     return total;
+}
+
+qint64 removePartials(const QString &outputDir)
+{
+    if (!QFileInfo(outputDir).isDir())
+        return 0;
+    qint64 freed = 0;
+    QDirIterator it(outputDir, {QStringLiteral("*.mp4.part")}, QDir::Files, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QFileInfo f = it.nextFileInfo();
+        if (QFile::remove(f.absoluteFilePath())) {
+            freed += f.size();
+            Log::info(QStringLiteral("Removido vídeo incompleto: %1").arg(QDir::toNativeSeparators(f.absoluteFilePath())));
+        }
+    }
+    return freed;
 }
 
 } // namespace aeonis::Clips

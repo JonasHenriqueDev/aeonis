@@ -118,29 +118,37 @@ Item {
             }
         }
 
-        // Faixa de sessões do dia, da mais nova (à esquerda) para a mais antiga
+        // Faixa de sessões do dia, da mais nova (à esquerda) para a mais antiga. A ordem é invertida no
+        // modelo: com layoutDirection RightToLeft o Qt posiciona a rolagem de forma inconsistente (a
+        // faixa abria no meio).
         ListView {
             id: strip
+            readonly property int selected: sv.index >= 0 ? sv.sessions.length - 1 - sv.index : -1
+            function reposition() {
+                if (selected >= 0) positionViewAtIndex(selected, ListView.Contain)
+                else positionViewAtBeginning()
+            }
             visible: !sv.fullscreen
             Layout.fillWidth: true
             Layout.preferredHeight: 64
             orientation: ListView.Horizontal
-            layoutDirection: Qt.RightToLeft
             spacing: 8
             clip: true
             boundsBehavior: Flickable.StopAtBounds
-            model: sv.sessions
-            currentIndex: sv.index
-            onCountChanged: Qt.callLater(() => positionViewAtIndex(sv.index, ListView.Contain))
-            onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
+            model: sv.sessions.slice().reverse()
+            currentIndex: selected
+            onModelChanged: Qt.callLater(reposition)
+            onCurrentIndexChanged: reposition()
+            onWidthChanged: Qt.callLater(reposition)
             FastWheel { horizontal: true }
             delegate: AbstractButton {
                 id: card
                 required property var modelData
                 required property int index
+                readonly property int number: sv.sessions.length - 1 - index // posição cronológica
                 readonly property var info: modelData.info || {}
                 readonly property var main: F.matchMain(modelData)
-                readonly property bool on: index === sv.index
+                readonly property bool on: index === strip.selected
                 width: 228
                 height: 64
                 hoverEnabled: true
@@ -180,7 +188,7 @@ Item {
                         Layout.rightMargin: 8
                         spacing: 2
                         Text {
-                            text: sv.sessionName(card.index)
+                            text: sv.sessionName(card.number)
                             color: Theme.text
                             font.pixelSize: 13
                             font.weight: Font.DemiBold
@@ -202,9 +210,10 @@ Item {
             }
         }
 
-        // Sem partida completa: os vídeos da sessão (destaques) para escolher.
+        // Sem partida completa (ou ela dividida em partes): os vídeos da sessão para escolher.
         Row {
-            visible: !sv.fullscreen && !!sv.session && sv.session.clips.length > 1 && !sv.session.clips.some(c => c.kind === "full")
+            visible: !sv.fullscreen && !!sv.session && sv.session.clips.length > 1
+                     && sv.session.clips.filter(c => c.kind === "full").length !== 1 // sem partida completa, ou ela em partes de 1 h
             spacing: 6
             Text { text: "Vídeos da sessão:"; color: Theme.muted; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter }
             Repeater {

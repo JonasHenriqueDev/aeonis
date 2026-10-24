@@ -1,7 +1,8 @@
 #pragma once
 // Detecta jogos pelo nome do processo: uma enumeração (CreateToolhelp32Snapshot) a cada 3 s enquanto
 // nenhum jogo roda; depois só verifica o PID. Espera a janela do jogo aparecer (até 20 s) para
-// descobrir em qual monitor ele está.
+// descobrir em qual monitor ele está. Se a janela do jogo some e o processo fica preso em segundo plano
+// (fechou mas não saiu), a sessão termina mesmo assim depois de um minuto.
 
 #include "GameCatalog.h"
 
@@ -38,6 +39,9 @@ private:
     DWORD m_currentPid = 0, m_pendingPid = 0;
     QString m_currentName, m_pendingName;
     qint64 m_pendingSince = 0;
+    bool m_hadWindow = false;   // o jogo atual já mostrou janela
+    qint64 m_noWindowSince = 0; // desde quando o jogo atual está sem janela
+    DWORD m_ignoredPid = 0;     // processo encerrado por falta de janela: não é detectado de novo
 };
 
 } // namespace aeonis

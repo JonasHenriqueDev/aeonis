@@ -72,7 +72,7 @@ public:
         }
     }
 
-    bool open(const QString &path, AVFormatContext *in, int videoIn, int audioIn, QString *error)
+    bool open(const QString &path, AVFormatContext *in, int videoIn, int audioIn, QString *error, bool faststart = true)
     {
         m_path = path;
         const QByteArray file = path.toUtf8();
@@ -101,7 +101,8 @@ public:
             return false;
         }
         AVDictionary *opts = nullptr;
-        av_dict_set(&opts, "movflags", "+faststart", 0);
+        if (faststart)
+            av_dict_set(&opts, "movflags", "+faststart", 0);
         ret = avformat_write_header(m_ctx, &opts);
         av_dict_free(&opts);
         if (ret < 0) {
@@ -259,7 +260,7 @@ double thumbnail(const QString &video, const QString &jpg, int width, int qualit
     return dur;
 }
 
-RemuxResult concat(const QStringList &segments, const QString &output)
+RemuxResult concat(const QStringList &segments, const QString &output, bool faststart, const std::atomic<bool> *cancel)
 {
     RemuxResult r;
     if (segments.isEmpty()) {
@@ -275,18 +276,26 @@ RemuxResult concat(const QStringList &segments, const QString &output)
         r.error = QStringLiteral("segmento sem vídeo");
         return r;
     }
+    // Escreve em "<saída>.part" e só renomeia no fim: uma interrupção (desligar, fechar à força) nunca
+    // deixa um .mp4 pela metade, que não abre, na pasta de vídeos.
+    const QString partial = output + QStringLiteral(".part");
     bool writerOk = false;
     {
         Mp4Writer writer;
-        if (!writer.open(output, first.get(), v0, a0, &r.error)) {
+        if (!writer.open(partial, first.get(), v0, a0, &r.error, faststart)) {
             first.reset();
-            QFile::remove(output);
+            QFile::remove(partial);
             return r;
         }
         std::unique_ptr<AVPacket, PacketDeleter> pkt(av_packet_alloc());
         int64_t baseUs = AV_NOPTS_VALUE;
         bool failed = false;
         for (int i = 0; i < segments.size() && !failed; ++i) {
+            if (cancel && cancel->load()) {
+                r.error = QStringLiteral("cancelado");
+                failed = true;
+                break;
+            }
             Input in = i == 0 ? std::move(first) : openInput(segments[i], false);
             if (!in)
                 continue; // segmento ilegível (ex.: apagado): segue com os outros
@@ -328,9 +337,15 @@ RemuxResult concat(const QStringList &segments, const QString &output)
         }
         writerOk = !failed && writer.finish(&r.error);
     }
-    if (!writerOk || QFileInfo(output).size() == 0) {
-        QFile::remove(output);
+    if (!writerOk || QFileInfo(partial).size() == 0) {
+        QFile::remove(partial);
         if (r.error.isEmpty()) r.error = QStringLiteral("arquivo vazio");
+        return r;
+    }
+    QFile::remove(output);
+    if (!QFile::rename(partial, output)) {
+        QFile::remove(partial);
+        r.error = QStringLiteral("renomear para %1").arg(output);
         return r;
     }
     r.ok = true;

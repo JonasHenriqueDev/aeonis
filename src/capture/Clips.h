@@ -19,5 +19,8 @@ void setSaved(const QStringList &paths, bool value);
 int enforceQuota(const QString &outputDir, double maxGb);
 /// Tamanho dos vídeos não salvos (o que conta para o limite).
 qint64 unsavedBytes(const QString &outputDir);
+/// Apaga os "*.mp4.part" deixados por um remux interrompido (app fechado à força, queda de energia).
+/// Chame só quando nenhum remux estiver rodando. Devolve quantos bytes liberou.
+qint64 removePartials(const QString &outputDir);
 
 } // namespace aeonis::Clips

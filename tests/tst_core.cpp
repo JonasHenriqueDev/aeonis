@@ -272,6 +272,16 @@ private slots:
         QVERIFY(QFile::exists(saved));
         QVERIFY(QFile::exists(newest));
         QCOMPARE(Clips::unsavedBytes(out.path()), qint64(3 * 1024 * 1024));
+
+        // Vídeo de um remux interrompido: some na limpeza, os completos ficam.
+        const QString partial = out.path() + "/g/e.mp4.part";
+        QFile pf(partial);
+        QVERIFY(pf.open(QIODevice::WriteOnly));
+        pf.write(QByteArray(1000, 'x'));
+        pf.close();
+        QCOMPARE(Clips::removePartials(out.path()), qint64(1000));
+        QVERIFY(!QFile::exists(partial));
+        QVERIFY(QFile::exists(newest));
     }
 
     /// Codifica 6 s sintéticos (x264 + AAC) em segmentos de 2 s e concatena/corta sem re-encode.
@@ -359,6 +369,16 @@ private slots:
         const Media::RemuxResult r = Media::concat(segs, mp4);
         QVERIFY2(r.ok, qPrintable(r.error));
         QVERIFY2(r.duration > 5.5 && r.duration < 6.5, qPrintable(QString::number(r.duration)));
+        QVERIFY(!QFile::exists(mp4 + ".part")); // escreve no .part e renomeia no fim
+        // Gravação longa: sem faststart, mesmo resultado.
+        const Media::RemuxResult plain = Media::concat(segs, dir.path() + "/plain.mp4", false);
+        QVERIFY2(plain.ok, qPrintable(plain.error));
+        QVERIFY(qAbs(plain.duration - r.duration) < 0.1);
+        // Cancelado: nem o .mp4 nem o .part ficam na pasta.
+        const std::atomic<bool> cancel{true};
+        QVERIFY(!Media::concat(segs, dir.path() + "/cancel.mp4", true, &cancel).ok);
+        QVERIFY(!QFile::exists(dir.path() + "/cancel.mp4"));
+        QVERIFY(!QFile::exists(dir.path() + "/cancel.mp4.part"));
         // Só os dois últimos segmentos (como um clipe de ~4 s).
         const Media::RemuxResult last = Media::concat(segs.mid(1), dir.path() + "/last.mp4");
         QVERIFY(last.ok);

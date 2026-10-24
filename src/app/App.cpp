@@ -111,10 +111,15 @@ App::App(bool minimized, QObject *parent) : QObject(parent), m_settings(Settings
     m_backend = new Backend(this, this);
     m_window = new WindowHost(m_backend, this);
 
-    // Primeiro recupera gravações interrompidas; a captura só começa depois (fila serial).
-    enqueue([] {
+    // Primeiro recupera gravações interrompidas; a captura só começa depois (fila serial). Com prioridade
+    // de disco baixa: recuperar uma sessão longa não pode travar o PC.
+    enqueue([this, outputDir = m_settings.outputDir] {
+        SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
+        Clips::removePartials(outputDir);
         QList<QPair<ClipResult, QString>> recovered;
-        CaptureEngine::recoverLeftovers([&](const ClipResult &r, const QString &game) { recovered.append({r, game}); });
+        CaptureEngine::recoverLeftovers([&](const ClipResult &r, const QString &game) { recovered.append({r, game}); },
+                                        &m_cancelRecovery);
+        SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_END);
         return recovered;
     }, [this](QList<QPair<ClipResult, QString>> recovered) {
         for (const auto &[r, game] : recovered) {
@@ -127,6 +132,10 @@ App::App(bool minimized, QObject *parent) : QObject(parent), m_settings(Settings
         enforceQuota();
         startDesktopBufferIfWanted();
     });
+
+    m_splitTimer.setInterval(60'000);
+    connect(&m_splitTimer, &QTimer::timeout, this, &App::splitLongRecording);
+    m_splitTimer.start();
 
     m_watcher->start();
     updateUi();
@@ -307,6 +316,37 @@ void App::stopEngineAndReport(Done then)
     });
 }
 
+void App::splitLongRecording()
+{
+    if (m_splitting || m_exiting || !m_engine.recording())
+        return;
+    const QDateTime since = m_engine.recordingSince();
+    if (!since.isValid() || since.secsTo(QDateTime::currentDateTime()) < CaptureEngine::PartSeconds)
+        return;
+    m_splitting = true;
+    struct Part {
+        QString session;
+        QDateTime start;
+        ClipResult result;
+    };
+    const QDateTime requestedAt = QDateTime::currentDateTime();
+    enqueue([this] {
+        Part p;
+        p.session = m_engine.sessionId();
+        p.result = m_engine.splitRecording(&p.start);
+        return p;
+    }, [this, requestedAt](Part p) {
+        m_splitting = false;
+        if (!p.result)
+            return;
+        Library::clipSaved(p.session, p.result.path, QStringLiteral("full"), labelOf(p.result.path), requestedAt,
+                           p.result.duration, p.start);
+        enforceQuota();
+        emit libraryChanged();
+        updateUi();
+    });
+}
+
 void App::saveManualClip()
 {
     if (!m_engine.running()) {
@@ -483,6 +523,8 @@ void App::exit()
     if (m_exiting)
         return;
     m_exiting = true;
+    m_cancelRecovery = true;
+    m_splitTimer.stop();
     m_watcher->stop();
     if (m_events) {
         m_events->deleteLater();
@@ -490,8 +532,8 @@ void App::exit()
     }
     m_highlighter->flush();
     m_window->close();
+    m_tray->hide(); // some na hora; uma partida em andamento ainda é salva antes de o processo sair
     stopEngineAndReport([this](bool) {
-        m_tray->hide();
         m_ops.waitForDone();
         QCoreApplication::quit();
     });

@@ -45,6 +45,7 @@ class CaptureEngine : public QObject {
 public:
     static constexpr int SegmentSeconds = 2;
     static constexpr int MaxExtendSeconds = 60; // Highlighter
+    static constexpr int PartSeconds = 60 * 60; // gravações longas saem em arquivos de até 1 h
 
     explicit CaptureEngine(QObject *parent = nullptr);
     ~CaptureEngine() override;
@@ -61,6 +62,9 @@ public:
     /// descartando a tela de carregamento). Nunca recua.
     void moveRecordingStart(double secondsAgo);
     ClipResult endRecording();
+    /// Fecha a parte atual da gravação longa num MP4 e segue gravando numa parte nova, sem perder quadros
+    /// (sessões de horas viram vários arquivos). `partStart` recebe o início da parte salva.
+    ClipResult splitRecording(QDateTime *partStart = nullptr);
     /// Atualiza a janela do buffer (configurações mudaram durante a sessão).
     void updateSettings(const Settings &settings);
 
@@ -72,7 +76,9 @@ public:
     QDateTime recordingSince() const;
 
     /// Recupera gravações longas interrompidas (queda de energia, crash) e limpa buffers órfãos.
-    static void recoverLeftovers(const std::function<void(const ClipResult &, const QString &game)> &recovered);
+    /// Cada buffer tem poucas tentativas; `cancel` interrompe (saída do app) sem gastar uma.
+    static void recoverLeftovers(const std::function<void(const ClipResult &, const QString &game)> &recovered,
+                                 const std::atomic<bool> *cancel = nullptr);
 
 signals:
     void failed(const QString &message);
@@ -83,7 +89,8 @@ private:
         QString path;
     };
     static std::vector<Segment> listSegments(const QString &dir);
-    static ClipResult concat(const std::vector<Segment> &segments, const QString &output);
+    static ClipResult concat(const std::vector<Segment> &segments, const QString &output,
+                             const std::atomic<bool> *cancel = nullptr);
 
     void videoLoop();
     void janitorLoop();

@@ -54,13 +54,21 @@ int keepSecondsFor(const Settings &s)
     return std::max(s.replaySeconds, s.clipPreSeconds + s.clipPostSeconds + CaptureEngine::MaxExtendSeconds) + 10;
 }
 
+/// Clipes curtos ganham faststart (índice no começo); em gravações longas isso regravaria o arquivo inteiro.
+constexpr int FaststartMaxSeconds = 10 * 60;
+/// Recuperação que já falhou (ou foi interrompida) tantas vezes desiste: não fica regravando a cada abertura.
+constexpr int MaxRecoverAttempts = 2;
+
 /// Mesmo formato do PinInfo da versão C# (Game, Start, OutputDir): recupera buffers das duas versões.
-void writePin(const QString &dir, const QString &game, int start, const QString &outputDir)
+/// `Attempts` conta as tentativas de recuperação já começadas.
+void writePin(const QString &dir, const QString &game, int start, const QString &outputDir, int attempts = 0)
 {
     QJsonObject o;
     o.insert(QStringLiteral("Game"), game);
     o.insert(QStringLiteral("Start"), start);
     o.insert(QStringLiteral("OutputDir"), outputDir);
+    if (attempts > 0)
+        o.insert(QStringLiteral("Attempts"), attempts);
     QSaveFile f(dir + QLatin1Char('/') + PinFile);
     if (f.open(QIODevice::WriteOnly)) {
         f.write(QJsonDocument(o).toJson(QJsonDocument::Compact));
@@ -89,13 +97,14 @@ std::vector<CaptureEngine::Segment> CaptureEngine::listSegments(const QString &d
     return result;
 }
 
-ClipResult CaptureEngine::concat(const std::vector<Segment> &segments, const QString &output)
+ClipResult CaptureEngine::concat(const std::vector<Segment> &segments, const QString &output, const std::atomic<bool> *cancel)
 {
     QStringList files;
     for (const Segment &s : segments)
         files << s.path;
     const QElapsedTimer timer = [] { QElapsedTimer t; t.start(); return t; }();
-    const Media::RemuxResult r = Media::concat(files, output);
+    const bool faststart = int(segments.size()) * SegmentSeconds <= FaststartMaxSeconds;
+    const Media::RemuxResult r = Media::concat(files, output, faststart, cancel);
     if (!r.ok) {
         Log::error(QStringLiteral("Falha ao gerar %1: %2").arg(output, r.error));
         return {};
@@ -429,6 +438,56 @@ void CaptureEngine::moveRecordingStart(double secondsAgo)
     }
 }
 
+ClipResult CaptureEngine::splitRecording(QDateTime *partStart)
+{
+    std::vector<Segment> pick;
+    QString dir, game, outputDir;
+    int oldStart = 0;
+    QDateTime oldSince;
+    {
+        std::lock_guard lock(m_mutex);
+        if (!m_running || !m_pinStart)
+            return {};
+        const auto segments = listSegments(m_dir);
+        if (segments.size() < 2)
+            return {};
+        // O último segmento ainda está sendo escrito: ele abre a próxima parte.
+        const Segment next = segments.back();
+        for (const Segment &s : segments)
+            if (s.index >= *m_pinStart && s.index < next.index)
+                pick.push_back(s);
+        if (pick.empty())
+            return {};
+        ++m_busy;
+        if (partStart)
+            *partStart = m_recordingSince;
+        dir = m_dir;
+        game = m_game;
+        outputDir = m_pinOutputDir.isEmpty() ? m_settings.outputDir : m_pinOutputDir;
+        oldStart = *m_pinStart;
+        oldSince = m_recordingSince;
+        m_pinStart = next.index;
+        m_recordingSince = QFileInfo(pick.back().path).lastModified();
+    }
+    Log::info(QStringLiteral("Gravação longa dividida: nova parte a partir do segmento %1.").arg(pick.back().index + 1));
+    const QString label = game == QLatin1String("Desktop") ? QStringLiteral("Gravação") : QStringLiteral("Partida");
+    const ClipResult r = concat(pick, Clips::newPath(outputDir, game, label));
+    // Só agora o recording.json avança: se o app cair no meio, a recuperação ainda inclui esta parte.
+    {
+        std::lock_guard lock(m_mutex);
+        if (r && m_dir == dir && m_pinStart) {
+            writePin(dir, game, *m_pinStart, m_pinOutputDir);
+            for (const Segment &s : pick)
+                QFile::remove(s.path);
+        } else if (!r && m_dir == dir && m_pinStart) {
+            m_pinStart = oldStart; // falhou: a parte continua na gravação e sai inteira no fim
+            m_recordingSince = oldSince;
+        }
+    }
+    --m_busy;
+    return r;
+}
+
 ClipResult CaptureEngine::endRecording()
 {
     QString dir;
@@ -512,7 +571,8 @@ QDateTime CaptureEngine::recordingSince() const
     return m_recordingSince;
 }
 
-void CaptureEngine::recoverLeftovers(const std::function<void(const ClipResult &, const QString &)> &recovered)
+void CaptureEngine::recoverLeftovers(const std::function<void(const ClipResult &, const QString &)> &recovered,
+                                     const std::atomic<bool> *cancel)
 {
     const QFileInfoList dirs = QDir(Paths::buffer()).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
     for (const QFileInfo &d : dirs) {
@@ -526,6 +586,7 @@ void CaptureEngine::recoverLeftovers(const std::function<void(const ClipResult &
             const QJsonObject pin = QJsonDocument::fromJson(data).object();
             const QString game = pin.value(QLatin1String("Game")).toString(QStringLiteral("Desktop"));
             const int start = pin.value(QLatin1String("Start")).toInt();
+            int attempts = pin.value(QLatin1String("Attempts")).toInt();
             QString outputDir = pin.value(QLatin1String("OutputDir")).toString();
             if (outputDir.isEmpty())
                 outputDir = Settings::load().outputDir;
@@ -533,13 +594,38 @@ void CaptureEngine::recoverLeftovers(const std::function<void(const ClipResult &
             for (const Segment &s : listSegments(dir))
                 if (s.index >= start)
                     segs.push_back(s);
-            if (!segs.empty()) {
-                const ClipResult r = concat(segs, Clips::newPath(outputDir, game, QStringLiteral("Recuperado")));
-                if (!r)
-                    continue; // mantém os segmentos para nova tentativa
+            // Em partes de no máximo PartSeconds, como na gravação: cada parte concluída avança o
+            // recording.json, então uma interrupção retoma de onde parou em vez de recomeçar tudo.
+            const size_t partSegments = PartSeconds / SegmentSeconds;
+            bool retry = false;
+            for (size_t from = 0; from < segs.size();) {
+                if (attempts >= MaxRecoverAttempts) {
+                    Log::error(QStringLiteral("Recuperação de %1 desistida depois de %2 tentativas; buffer descartado.").arg(dir).arg(attempts));
+                    break;
+                }
+                const size_t to = std::min(segs.size(), from + partSegments);
+                const std::vector<Segment> part(segs.begin() + from, segs.begin() + to);
+                // Conta a tentativa antes de começar: se o app for fechado à força no meio, a próxima
+                // abertura sabe disso e não fica regravando o mesmo trecho a cada início.
+                writePin(dir, game, part.front().index, outputDir, attempts + 1);
+                const ClipResult r = concat(part, Clips::newPath(outputDir, game, QStringLiteral("Recuperado")), cancel);
+                if (!r) {
+                    if (cancel && cancel->load()) {
+                        writePin(dir, game, part.front().index, outputDir, attempts); // saída do app: não conta
+                        return;
+                    }
+                    retry = true; // mantém os segmentos para nova tentativa
+                    break;
+                }
                 if (recovered)
                     recovered(r, game);
+                attempts = 0;
+                from = to;
+                if (from < segs.size())
+                    writePin(dir, game, segs[from].index, outputDir);
             }
+            if (retry)
+                continue;
         }
         if (!QDir(dir).removeRecursively())
             Log::warn(QStringLiteral("Limpeza de %1 incompleta").arg(dir));

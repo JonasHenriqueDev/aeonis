@@ -5,6 +5,8 @@
 #include <QString>
 #include <QStringList>
 
+#include <atomic>
+
 namespace aeonis::Media {
 
 /// Duração em segundos (0 se não der para ler).
@@ -22,8 +24,11 @@ struct RemuxResult {
     double startOffset = 0; // trim: instante real (s) do primeiro quadro no vídeo original
 };
 
-/// Junta segmentos MPEG-TS consecutivos em um MP4 sem re-encode (-c copy, faststart, hvc1 para HEVC).
-RemuxResult concat(const QStringList &segments, const QString &output);
+/// Junta segmentos MPEG-TS consecutivos em um MP4 sem re-encode (-c copy, hvc1 para HEVC). O arquivo só
+/// aparece com o nome final quando está completo. `faststart` regrava o arquivo inteiro para pôr o índice
+/// no começo: vale para clipes, não para gravações longas. `cancel` interrompe (sem gerar o arquivo).
+RemuxResult concat(const QStringList &segments, const QString &output, bool faststart = true,
+                   const std::atomic<bool> *cancel = nullptr);
 
 /// Corta [start, end] (s) sem re-encode. Começa no keyframe anterior a `start` (como o -ss do ffmpeg).
 RemuxResult trim(const QString &source, const QString &output, double start, double end);

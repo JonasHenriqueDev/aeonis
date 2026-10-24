@@ -11,6 +11,8 @@ namespace aeonis {
 
 namespace {
 
+constexpr qint64 WindowGoneMs = 60'000;
+
 struct WindowSearch {
     DWORD pid = 0;
     HWND found = nullptr;
@@ -96,7 +98,24 @@ bool GameWatcher::isAlive(DWORD pid, const QString &name)
 void GameWatcher::tick()
 {
     if (m_current) {
-        if (!isAlive(m_currentPid, m_currentName)) {
+        bool ended = !isAlive(m_currentPid, m_currentName);
+        if (!ended) {
+            const qint64 now = QDateTime::currentMSecsSinceEpoch();
+            if (mainWindowOf(m_currentPid)) {
+                m_hadWindow = true;
+                m_noWindowSince = 0;
+            } else if (m_hadWindow) {
+                if (!m_noWindowSince)
+                    m_noWindowSince = now;
+                else if (now - m_noWindowSince >= WindowGoneMs) {
+                    Log::info(QStringLiteral("%1 sem janela há %2 s (processo preso em segundo plano): sessão encerrada.")
+                                  .arg(m_current->name).arg(WindowGoneMs / 1000));
+                    m_ignoredPid = m_currentPid;
+                    ended = true;
+                }
+            }
+        }
+        if (ended) {
             const GameDef g = *m_current;
             m_current.reset();
             Log::info(QStringLiteral("Jogo encerrado: %1").arg(g.name));
@@ -116,6 +135,8 @@ void GameWatcher::tick()
         m_current = m_pending;
         m_currentPid = m_pendingPid;
         m_currentName = m_pendingName;
+        m_hadWindow = hwnd != nullptr;
+        m_noWindowSince = 0;
         m_pending.reset();
         Log::info(QStringLiteral("Jogo detectado: %1 (pid %2)").arg(m_current->name).arg(m_currentPid));
         emit gameStarted(*m_current, Monitors::ofWindow(hwnd), exePathOf(m_currentPid));
@@ -132,7 +153,12 @@ void GameWatcher::tick()
     if (snap == INVALID_HANDLE_VALUE)
         return;
     PROCESSENTRY32W pe{sizeof(pe)};
+    bool ignoredAlive = false;
     for (BOOL ok = Process32FirstW(snap, &pe); ok; ok = Process32NextW(snap, &pe)) {
+        if (m_ignoredPid && pe.th32ProcessID == m_ignoredPid) {
+            ignoredAlive = true;
+            continue;
+        }
         const QString name = baseName(pe.szExeFile);
         const auto it = map.constFind(name.toLower());
         if (it != map.constEnd()) {
@@ -144,6 +170,8 @@ void GameWatcher::tick()
         }
     }
     CloseHandle(snap);
+    if (!ignoredAlive && !m_pending)
+        m_ignoredPid = 0;
     if (m_pending)
         tick(); // a janela já pode estar aberta
 }
