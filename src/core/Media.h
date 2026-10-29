@@ -31,6 +31,8 @@ RemuxResult concat(const QStringList &segments, const QString &output, bool fast
                    const std::atomic<bool> *cancel = nullptr);
 
 /// Corta [start, end] (s) sem re-encode. Começa no keyframe anterior a `start` (como o -ss do ffmpeg).
-RemuxResult trim(const QString &source, const QString &output, double start, double end);
+/// `compress`: re-encoda a imagem em H.264 (x264, CRF) com no máximo 1080p para um arquivo menor,
+/// começando exatamente em `start` (bem mais lento; o áudio é copiado).
+RemuxResult trim(const QString &source, const QString &output, double start, double end, bool compress = false);
 
 } // namespace aeonis::Media

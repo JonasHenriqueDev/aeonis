@@ -406,6 +406,11 @@ private slots:
         QVERIFY2(cut.ok, qPrintable(cut.error));
         QVERIFY(qAbs(cut.startOffset - 2.0) < 0.1);
         QVERIFY2(cut.duration > 2.5 && cut.duration < 3.6, qPrintable(QString::number(cut.duration)));
+        // Corte comprimido (x264): começa exatamente no início pedido.
+        const Media::RemuxResult small = Media::trim(mp4, dir.path() + "/small.mp4", 2.5, 5.0, true);
+        QVERIFY2(small.ok, qPrintable(small.error));
+        QCOMPARE(small.startOffset, 2.5);
+        QVERIFY2(small.duration > 2.2 && small.duration < 2.9, qPrintable(QString::number(small.duration)));
         // Miniatura e duração do MP4.
         const double d = Media::thumbnail(mp4, dir.path() + "/t.jpg");
         QVERIFY(d > 5.5);

@@ -53,7 +53,7 @@ FocusScope {
     readonly property int pickedCount: Object.keys(picked).length
     function createClips() {
         creatingClips = true
-        App.clipsFromEvents(media.path, Object.keys(picked).map(k => ({ t: picked[k].t, label: picked[k].label })))
+        App.clipsFromEvents(media.path, Object.keys(picked).map(k => ({ t: picked[k].t, label: picked[k].label })), compress)
     }
     property bool priming: false // carregando o primeiro quadro (mudo), depois pausa
     property bool started: false // já tocou ou mudou de posição: a capa some
@@ -66,6 +66,7 @@ FocusScope {
     }
     property var trim: null // { a, b } em segundos
     property bool trimming: false
+    property bool compress: false // corte/clipes re-encodados para um arquivo menor
     readonly property real duration: player.duration > 0 ? player.duration / 1000 : (media ? Math.max(0, win.durationOf(media)) : 0)
     readonly property real position: player.position / 1000
     readonly property bool fullscreen: win.playerFullscreen
@@ -729,13 +730,21 @@ FocusScope {
                                 onClicked: p.zoomToTrim()
                             }
                             Item { Layout.fillWidth: true }
-                            Text { text: p.trim ? F.dur(p.trim.b - p.trim.a) + " · sem re-encode" : ""; color: Theme.muted; font.pixelSize: 12 }
+                            Text { text: p.trim ? F.dur(p.trim.b - p.trim.a) + (p.compress ? "" : " · sem re-encode") : ""; color: Theme.muted; font.pixelSize: 12 }
+                            CheckBox {
+                                text: "Comprimir"
+                                checked: p.compress
+                                onToggled: p.compress = checked
+                                focusPolicy: Qt.NoFocus
+                                ToolTip.visible: hovered
+                                ToolTip.text: "Re-encoda em H.264 (até 1080p) para um arquivo bem menor. Demora mais."
+                            }
                             AButton { text: "Cancelar"; onClicked: p.trim = null }
                             AButton {
-                                text: p.trimming ? "Cortando…" : "Salvar corte"
+                                text: p.trimming ? (p.compress ? "Comprimindo…" : "Cortando…") : "Salvar corte"
                                 primary: true
                                 enabled: !p.trimming
-                                onClicked: { p.trimming = true; App.trim(p.media.path, p.trim.a, p.trim.b) }
+                                onClicked: { p.trimming = true; App.trim(p.media.path, p.trim.a, p.trim.b, p.compress) }
                             }
                         }
                     }
@@ -916,6 +925,14 @@ FocusScope {
                         RowLayout {
                             Layout.fillWidth: true
                             AButton { text: "Cancelar"; enabled: !p.creatingClips; onClicked: { p.picking = false; p.picked = ({}) } }
+                            CheckBox {
+                                text: "Comprimir"
+                                checked: p.compress
+                                onToggled: p.compress = checked
+                                focusPolicy: Qt.NoFocus
+                                ToolTip.visible: hovered
+                                ToolTip.text: "Re-encoda em H.264 (até 1080p) para arquivos bem menores. Demora mais."
+                            }
                             Item { Layout.fillWidth: true }
                             AButton {
                                 text: p.creatingClips ? "Criando…" : "Criar clipes"

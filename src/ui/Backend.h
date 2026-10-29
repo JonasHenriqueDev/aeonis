@@ -42,10 +42,11 @@ public:
     Q_INVOKABLE void openFolder();
     Q_INVOKABLE void openLog();
     Q_INVOKABLE void deleteClips(const QStringList &paths);
-    Q_INVOKABLE void trim(const QString &path, double start, double end);
+    /// `compress`: re-encoda para um arquivo menor (Media::trim).
+    Q_INVOKABLE void trim(const QString &path, double start, double end, bool compress = false);
     /// Clipes sugeridos: um clipe por grupo de eventos escolhidos ({ t, label }) do vídeo, com os segundos
     /// antes/depois das configurações. Responde com eventClipsDone.
-    Q_INVOKABLE void clipsFromEvents(const QString &path, const QVariantList &events);
+    Q_INVOKABLE void clipsFromEvents(const QString &path, const QVariantList &events, bool compress = false);
     Q_INVOKABLE void setSaved(const QStringList &paths, bool saved);
     Q_INVOKABLE bool saveSettings(const QVariantMap &values);
     /// Envia o vídeo ao YouTube. `video`: title, description, tags (separadas por vírgula),

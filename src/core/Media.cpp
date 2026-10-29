@@ -6,6 +6,7 @@
 #include <QImage>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <memory>
 #include <vector>
@@ -72,7 +73,9 @@ public:
         }
     }
 
-    bool open(const QString &path, AVFormatContext *in, int videoIn, int audioIn, QString *error, bool faststart = true)
+    /// `videoEnc`: a faixa de vídeo vem desse encoder (re-encode) em vez de copiada de `in`.
+    bool open(const QString &path, AVFormatContext *in, int videoIn, int audioIn, QString *error, bool faststart = true,
+              const AVCodecContext *videoEnc = nullptr)
     {
         m_path = path;
         const QByteArray file = path.toUtf8();
@@ -88,11 +91,15 @@ public:
             }
             AVStream *src = in->streams[idx];
             AVStream *dst = avformat_new_stream(m_ctx, nullptr);
-            avcodec_parameters_copy(dst->codecpar, src->codecpar);
+            const bool encoded = videoEnc && idx == videoIn;
+            if (encoded)
+                avcodec_parameters_from_context(dst->codecpar, videoEnc);
+            else
+                avcodec_parameters_copy(dst->codecpar, src->codecpar);
             dst->codecpar->codec_tag = 0;
             if (dst->codecpar->codec_id == AV_CODEC_ID_HEVC)
                 dst->codecpar->codec_tag = MKTAG('h', 'v', 'c', '1'); // reproduz no Windows/QuickTime
-            dst->time_base = src->time_base;
+            dst->time_base = encoded ? videoEnc->time_base : src->time_base;
             m_out.push_back(dst->index);
         }
         ret = avio_open(&m_ctx->pb, file.constData(), AVIO_FLAG_WRITE);
@@ -174,6 +181,174 @@ private:
 struct PacketDeleter {
     void operator()(AVPacket *p) const { av_packet_free(&p); }
 };
+
+struct CodecDeleter {
+    void operator()(AVCodecContext *c) const { avcodec_free_context(&c); }
+};
+using Codec = std::unique_ptr<AVCodecContext, CodecDeleter>;
+
+struct FrameDeleter {
+    void operator()(AVFrame *f) const { av_frame_free(&f); }
+};
+
+/// Corte com re-encode da imagem (x264, CRF 26, até 1080p) para um arquivo menor; o áudio é copiado.
+RemuxResult compressRange(const QString &source, const QString &output, double start, double end)
+{
+    RemuxResult r;
+    Input in = openInput(source, true, &r.error);
+    if (!in)
+        return r;
+    const int v = firstStream(in.get(), AVMEDIA_TYPE_VIDEO);
+    const int a = firstStream(in.get(), AVMEDIA_TYPE_AUDIO);
+    if (v < 0) {
+        r.error = QStringLiteral("vídeo sem faixa de imagem");
+        return r;
+    }
+    AVStream *vst = in->streams[v];
+    const AVCodec *decoder = avcodec_find_decoder(vst->codecpar->codec_id);
+    const AVCodec *encoder = avcodec_find_encoder_by_name("libx264");
+    if (!decoder || !encoder) {
+        r.error = QStringLiteral("codec indisponível para comprimir");
+        return r;
+    }
+    Codec dec(avcodec_alloc_context3(decoder));
+    avcodec_parameters_to_context(dec.get(), vst->codecpar);
+    dec->pkt_timebase = vst->time_base;
+    dec->thread_count = 0;
+    int ret = avcodec_open2(dec.get(), decoder, nullptr);
+    if (ret < 0) {
+        r.error = QStringLiteral("abrir decodificador: %1").arg(avError(ret));
+        return r;
+    }
+    const int srcW = vst->codecpar->width, srcH = vst->codecpar->height;
+    if (srcW <= 0 || srcH <= 0) {
+        r.error = QStringLiteral("tamanho da imagem desconhecido");
+        return r;
+    }
+    const int outH = std::min(srcH, 1080) & ~1;
+    const int outW = std::max(2, int(std::lround(double(srcW) * outH / srcH)) & ~1);
+    Codec enc(avcodec_alloc_context3(encoder));
+    enc->width = outW;
+    enc->height = outH;
+    enc->pix_fmt = AV_PIX_FMT_YUV420P;
+    enc->time_base = vst->time_base;
+    const AVRational fps = av_guess_frame_rate(in.get(), vst, nullptr);
+    if (fps.num > 0 && fps.den > 0) {
+        enc->framerate = fps;
+        enc->gop_size = std::max(1, 2 * fps.num / fps.den);
+    }
+    enc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+    enc->thread_count = 0;
+    AVDictionary *opts = nullptr;
+    av_dict_set(&opts, "preset", "veryfast", 0);
+    av_dict_set(&opts, "crf", "26", 0);
+    ret = avcodec_open2(enc.get(), encoder, &opts);
+    av_dict_free(&opts);
+    if (ret < 0) {
+        r.error = QStringLiteral("abrir x264: %1").arg(avError(ret));
+        return r;
+    }
+
+    const int64_t startUs = int64_t(start * AV_TIME_BASE);
+    const int64_t endUs = int64_t(end * AV_TIME_BASE);
+    const int64_t originUs = in->start_time != AV_NOPTS_VALUE ? in->start_time : 0;
+    const int64_t videoBase = av_rescale_q(originUs + startUs, AV_TIME_BASE_Q, vst->time_base);
+    av_seek_frame(in.get(), -1, originUs + startUs, AVSEEK_FLAG_BACKWARD);
+
+    bool ok = false;
+    {
+        Mp4Writer writer;
+        if (!writer.open(output, in.get(), v, a, &r.error, true, enc.get())) {
+            in.reset();
+            QFile::remove(output);
+            return r;
+        }
+        std::unique_ptr<AVPacket, PacketDeleter> pkt(av_packet_alloc()), out(av_packet_alloc());
+        std::unique_ptr<AVFrame, FrameDeleter> frame(av_frame_alloc()), scaled(av_frame_alloc());
+        scaled->format = AV_PIX_FMT_YUV420P;
+        scaled->width = outW;
+        scaled->height = outH;
+        av_frame_get_buffer(scaled.get(), 0);
+        SwsContext *sws = nullptr;
+        bool videoDone = false, audioDone = a < 0, failed = false;
+        qint64 frames = 0;
+
+        auto drainEncoder = [&] {
+            while (!failed && avcodec_receive_packet(enc.get(), out.get()) == 0) {
+                if (!writer.write(0, out.get(), enc->time_base)) {
+                    r.error = QStringLiteral("gravar: %1").arg(writer.lastError());
+                    failed = true;
+                }
+                av_packet_unref(out.get());
+            }
+        };
+        auto takeFrames = [&] {
+            while (!failed && avcodec_receive_frame(dec.get(), frame.get()) == 0) {
+                const int64_t pts = frame->best_effort_timestamp != AV_NOPTS_VALUE ? frame->best_effort_timestamp : frame->pts;
+                const int64_t us = pts == AV_NOPTS_VALUE ? -1 : av_rescale_q(pts, vst->time_base, AV_TIME_BASE_Q) - originUs;
+                if (us > endUs)
+                    videoDone = true;
+                if (us >= startUs && us <= endUs) {
+                    sws = sws_getCachedContext(sws, frame->width, frame->height, AVPixelFormat(frame->format), outW, outH,
+                                               AV_PIX_FMT_YUV420P, SWS_BICUBIC, nullptr, nullptr, nullptr);
+                    if (sws && av_frame_make_writable(scaled.get()) >= 0) {
+                        sws_scale(sws, frame->data, frame->linesize, 0, frame->height, scaled->data, scaled->linesize);
+                        scaled->pts = pts - videoBase;
+                        scaled->pict_type = AV_PICTURE_TYPE_NONE;
+                        if (avcodec_send_frame(enc.get(), scaled.get()) >= 0)
+                            ++frames;
+                        drainEncoder();
+                    }
+                }
+                av_frame_unref(frame.get());
+            }
+        };
+
+        while (!failed && !(videoDone && audioDone) && av_read_frame(in.get(), pkt.get()) >= 0) {
+            if (pkt->stream_index == v && !videoDone) {
+                avcodec_send_packet(dec.get(), pkt.get());
+                takeFrames();
+            } else if (pkt->stream_index == a && !audioDone) {
+                if (pkt->dts == AV_NOPTS_VALUE) pkt->dts = pkt->pts;
+                if (pkt->pts == AV_NOPTS_VALUE) pkt->pts = pkt->dts;
+                const AVRational tb = in->streams[a]->time_base;
+                const int64_t us = pkt->pts == AV_NOPTS_VALUE ? -1 : av_rescale_q(pkt->pts, tb, AV_TIME_BASE_Q) - originUs;
+                if (us > endUs) {
+                    audioDone = true;
+                } else if (us >= startUs) {
+                    const int64_t base = av_rescale_q(originUs + startUs, AV_TIME_BASE_Q, tb);
+                    pkt->pts -= base;
+                    pkt->dts -= base;
+                    if (!writer.write(1, pkt.get(), tb)) {
+                        r.error = QStringLiteral("gravar: %1").arg(writer.lastError());
+                        failed = true;
+                    }
+                }
+            }
+            av_packet_unref(pkt.get());
+        }
+        if (!failed && !videoDone) {
+            avcodec_send_packet(dec.get(), nullptr);
+            takeFrames();
+        }
+        if (!failed) {
+            avcodec_send_frame(enc.get(), nullptr);
+            drainEncoder();
+        }
+        sws_freeContext(sws);
+        if (!failed && frames == 0)
+            r.error = QStringLiteral("nenhum quadro no trecho");
+        ok = !failed && frames > 0 && writer.finish(&r.error);
+        r.startOffset = start;
+    }
+    if (!ok) {
+        QFile::remove(output);
+        return r;
+    }
+    r.ok = true;
+    r.duration = duration(output);
+    return r;
+}
 
 } // namespace
 
@@ -353,8 +528,10 @@ RemuxResult concat(const QStringList &segments, const QString &output, bool fast
     return r;
 }
 
-RemuxResult trim(const QString &source, const QString &output, double start, double end)
+RemuxResult trim(const QString &source, const QString &output, double start, double end, bool compress)
 {
+    if (compress)
+        return compressRange(source, output, start, end);
     RemuxResult r;
     Input in = openInput(source, true, &r.error);
     if (!in)

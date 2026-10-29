@@ -223,7 +223,7 @@ void Backend::setSaved(const QStringList &paths, bool saved)
     refresh();
 }
 
-void Backend::trim(const QString &path, double start, double end)
+void Backend::trim(const QString &path, double start, double end, bool compress)
 {
     const QString source = safeVideo(path);
     if (source.isEmpty())
@@ -238,8 +238,8 @@ void Backend::trim(const QString &path, double start, double end)
     for (int i = 2; QFileInfo::exists(output); ++i)
         output = fi.absolutePath() + QLatin1Char('/') + fi.completeBaseName() + QStringLiteral("_corte%1.mp4").arg(i);
     output = QDir::toNativeSeparators(output);
-    runAsync(this, [source, output, start, end] {
-        const Media::RemuxResult r = Media::trim(source, output, start, end);
+    runAsync(this, [source, output, start, end, compress] {
+        const Media::RemuxResult r = Media::trim(source, output, start, end, compress);
         if (r.ok)
             Library::derived(source, output, r.startOffset, r.duration);
         else
@@ -254,7 +254,7 @@ void Backend::trim(const QString &path, double start, double end)
     });
 }
 
-void Backend::clipsFromEvents(const QString &path, const QVariantList &events)
+void Backend::clipsFromEvents(const QString &path, const QVariantList &events, bool compress)
 {
     const QString source = safeVideo(path);
     if (source.isEmpty() || events.isEmpty()) {
@@ -269,7 +269,7 @@ void Backend::clipsFromEvents(const QString &path, const QVariantList &events)
     }
     const Settings s = m_app->settings();
     const int pre = s.clipPreSeconds, post = s.clipPostSeconds;
-    runAsync(this, [source, list, pre, post] {
+    runAsync(this, [source, list, pre, post, compress] {
         const QList<Highlighter::Span> spans = Highlighter::spans(list, pre, post, Media::duration(source));
         const QFileInfo fi(source);
         int saved = 0, n = 1;
@@ -281,7 +281,7 @@ void Backend::clipsFromEvents(const QString &path, const QVariantList &events)
                 output = QDir::toNativeSeparators(fi.absolutePath() + QLatin1Char('/') + fi.completeBaseName()
                                                   + QStringLiteral("_destaque%1.mp4").arg(n++));
             } while (QFileInfo::exists(output));
-            const Media::RemuxResult r = Media::trim(source, output, span.start, span.end);
+            const Media::RemuxResult r = Media::trim(source, output, span.start, span.end, compress);
             if (!r.ok) {
                 Log::error(QStringLiteral("Falha ao criar clipe de %1: %2").arg(source, r.error));
                 continue;
