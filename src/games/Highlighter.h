@@ -8,6 +8,7 @@
 #include <QTimer>
 
 #include <functional>
+#include <utility>
 
 namespace aeonis {
 
@@ -28,6 +29,17 @@ public:
 
     /// Rótulo do clipe a partir dos eventos (o mais importante; "3 Abates" para abates simples).
     static QString label(const QStringList &reasons);
+
+    /// Trecho de um vídeo já gravado para um grupo de eventos (clipes sugeridos).
+    struct Span {
+        double start = 0;
+        double end = 0;
+        QStringList reasons;
+    };
+    /// Eventos (instante em s, rótulo) de um vídeo viram trechos [primeiro − pré, último + pós], juntando os
+    /// próximos como no destaque ao vivo: cabem no mesmo clipe enquanto as janelas se tocam e o grupo
+    /// não passa de MaxExtendSeconds. `duration` > 0 limita o fim.
+    static QList<Span> spans(QList<std::pair<double, QString>> events, int pre, int post, double duration = 0);
 
 private:
     void fire();

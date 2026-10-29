@@ -39,8 +39,10 @@ void matchInfo(const QString &session, const QJsonObject &info);
 /// (gravação longa); senão é deduzido de requestedAt − duração.
 void clipSaved(const QString &session, const QString &path, const QString &kind, const QString &label,
                const QDateTime &requestedAt, double duration, const QDateTime &start = {});
-/// Registra um corte como pertencente à mesma partida do vídeo original.
-void derived(const QString &source, const QString &output, double offsetSeconds, double duration);
+/// Registra um corte como pertencente à mesma partida do vídeo original. `kind`/`label` vazios: os do
+/// original, com " (corte)" no rótulo.
+void derived(const QString &source, const QString &output, double offsetSeconds, double duration,
+             const QString &kind = {}, const QString &label = {});
 
 QList<LibEntry> load();
 /// Datas ISO 8601 da versão C# (7 casas decimais, com ou sem fuso).

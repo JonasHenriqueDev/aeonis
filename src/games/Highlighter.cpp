@@ -1,6 +1,7 @@
 #include "Highlighter.h"
 #include "core/Log.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace aeonis {
@@ -60,6 +61,23 @@ QString Highlighter::label(const QStringList &r)
         return p == QLatin1String("Abate") && kills > 1 ? QStringLiteral("%1 Abates").arg(kills) : p;
     }
     return r.isEmpty() ? QStringLiteral("Destaque") : r.first();
+}
+
+QList<Highlighter::Span> Highlighter::spans(QList<std::pair<double, QString>> events, int pre, int post, double duration)
+{
+    std::sort(events.begin(), events.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
+    QList<Span> out;
+    double first = 0, last = 0;
+    for (const auto &[t, reason] : events) {
+        if (out.isEmpty() || t - last > pre + post || t - first > MaxExtendSeconds) {
+            first = t;
+            out.append({std::max(0.0, t - pre), 0, {}});
+        }
+        last = t;
+        out.last().reasons << reason;
+        out.last().end = duration > 0 ? std::min(duration, t + post) : t + post;
+    }
+    return out;
 }
 
 } // namespace aeonis

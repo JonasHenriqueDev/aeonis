@@ -43,6 +43,9 @@ public:
     Q_INVOKABLE void openLog();
     Q_INVOKABLE void deleteClips(const QStringList &paths);
     Q_INVOKABLE void trim(const QString &path, double start, double end);
+    /// Clipes sugeridos: um clipe por grupo de eventos escolhidos ({ t, label }) do vídeo, com os segundos
+    /// antes/depois das configurações. Responde com eventClipsDone.
+    Q_INVOKABLE void clipsFromEvents(const QString &path, const QVariantList &events);
     Q_INVOKABLE void setSaved(const QStringList &paths, bool saved);
     Q_INVOKABLE bool saveSettings(const QVariantMap &values);
     /// Envia o vídeo ao YouTube. `video`: title, description, tags (separadas por vírgula),
@@ -72,6 +75,7 @@ signals:
     void thumbReady(const QString &id, const QString &url, double duration);
     void posterReady(const QString &id, const QString &url);
     void trimDone(bool ok, const QString &path);
+    void eventClipsDone(int saved);
 
 private:
     QString safeVideo(const QString &path) const;

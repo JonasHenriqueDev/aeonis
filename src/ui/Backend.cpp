@@ -10,6 +10,7 @@
 #include "core/Media.h"
 #include "core/MediaCache.h"
 #include "games/GameCatalog.h"
+#include "games/Highlighter.h"
 #include "share/YouTube.h"
 
 #include <QDesktopServices>
@@ -249,6 +250,54 @@ void Backend::trim(const QString &path, double start, double end)
         emit toast(ok ? QStringLiteral("Corte salvo.") : QStringLiteral("Falha ao cortar o vídeo (veja o log)."),
                    ok ? QStringLiteral("info") : QStringLiteral("error"));
         if (ok)
+            refresh();
+    });
+}
+
+void Backend::clipsFromEvents(const QString &path, const QVariantList &events)
+{
+    const QString source = safeVideo(path);
+    if (source.isEmpty() || events.isEmpty()) {
+        emit eventClipsDone(0);
+        return;
+    }
+    QList<std::pair<double, QString>> list;
+    for (const QVariant &v : events) {
+        const QVariantMap m = v.toMap();
+        if (const double t = m.value(QStringLiteral("t")).toDouble(); t >= 0)
+            list.append({t, m.value(QStringLiteral("label")).toString()});
+    }
+    const Settings s = m_app->settings();
+    const int pre = s.clipPreSeconds, post = s.clipPostSeconds;
+    runAsync(this, [source, list, pre, post] {
+        const QList<Highlighter::Span> spans = Highlighter::spans(list, pre, post, Media::duration(source));
+        const QFileInfo fi(source);
+        int saved = 0, n = 1;
+        for (const Highlighter::Span &span : spans) {
+            if (span.end - span.start < 0.5)
+                continue;
+            QString output;
+            do {
+                output = QDir::toNativeSeparators(fi.absolutePath() + QLatin1Char('/') + fi.completeBaseName()
+                                                  + QStringLiteral("_destaque%1.mp4").arg(n++));
+            } while (QFileInfo::exists(output));
+            const Media::RemuxResult r = Media::trim(source, output, span.start, span.end);
+            if (!r.ok) {
+                Log::error(QStringLiteral("Falha ao criar clipe de %1: %2").arg(source, r.error));
+                continue;
+            }
+            Library::derived(source, output, r.startOffset, r.duration, QStringLiteral("highlight"), Highlighter::label(span.reasons));
+            ++saved;
+        }
+        return std::make_pair(saved, int(spans.size()));
+    }, [this](std::pair<int, int> r) {
+        emit eventClipsDone(r.first);
+        if (r.first > 0)
+            emit toast(r.first == 1 ? QStringLiteral("1 clipe criado.") : QStringLiteral("%1 clipes criados.").arg(r.first),
+                       r.first == r.second ? QStringLiteral("info") : QStringLiteral("error"));
+        else
+            emit toast(QStringLiteral("Falha ao criar os clipes (veja o log)."), QStringLiteral("error"));
+        if (r.first > 0)
             refresh();
     });
 }

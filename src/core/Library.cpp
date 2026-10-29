@@ -167,7 +167,8 @@ void clipSaved(const QString &session, const QString &path, const QString &kind,
     append(e);
 }
 
-void derived(const QString &source, const QString &output, double offsetSeconds, double duration)
+void derived(const QString &source, const QString &output, double offsetSeconds, double duration,
+             const QString &kind, const QString &label)
 {
     std::optional<LibEntry> src;
     for (const LibEntry &e : load())
@@ -178,8 +179,10 @@ void derived(const QString &source, const QString &output, double offsetSeconds,
     e.s = src ? src->s : QString();
     e.at = QDateTime::currentDateTime();
     e.path = output;
-    e.kind = !src || src->kind == QLatin1String("full") || src->kind.isEmpty() ? QStringLiteral("manual") : src->kind;
-    e.label = (src && !src->label.isEmpty() ? src->label : QStringLiteral("Clipe")) + QStringLiteral(" (corte)");
+    e.kind = !kind.isEmpty() ? kind
+           : !src || src->kind == QLatin1String("full") || src->kind.isEmpty() ? QStringLiteral("manual") : src->kind;
+    e.label = !label.isEmpty() ? label
+            : (src && !src->label.isEmpty() ? src->label : QStringLiteral("Clipe")) + QStringLiteral(" (corte)");
     if (duration > 0)
         e.duration = duration;
     if (src && src->start.isValid())

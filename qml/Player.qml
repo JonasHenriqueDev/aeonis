@@ -39,6 +39,22 @@ FocusScope {
         if (after !== undefined) seek(after - 3)
     }
     function setRate(r) { player.playbackRate = r }
+    // Clipes sugeridos: eventos escolhidos na lista viram clipes (os próximos se juntam num só).
+    property bool picking: false
+    property var picked: ({})
+    property bool creatingClips: false
+    function pickKey(m) { return m.t + "|" + m.label }
+    function togglePick(m) {
+        const s = Object.assign({}, picked)
+        if (s[pickKey(m)]) delete s[pickKey(m)]
+        else s[pickKey(m)] = m
+        picked = s
+    }
+    readonly property int pickedCount: Object.keys(picked).length
+    function createClips() {
+        creatingClips = true
+        App.clipsFromEvents(media.path, Object.keys(picked).map(k => ({ t: picked[k].t, label: picked[k].label })))
+    }
     property bool priming: false // carregando o primeiro quadro (mudo), depois pausa
     property bool started: false // já tocou ou mudou de posição: a capa some
     property string primedUrl: "" // vídeo cujo primeiro quadro já foi carregado (só uma vez por vídeo)
@@ -95,6 +111,8 @@ FocusScope {
 
     onMediaChanged: {
         trim = null
+        picking = false
+        picked = ({})
         zoomLen = 0
         zoomStart = 0
         started = win.pendingSeek >= 0
@@ -164,6 +182,7 @@ FocusScope {
     Connections {
         target: App
         function onTrimDone(ok, path) { p.trimming = false; if (ok) p.trim = null }
+        function onEventClipsDone(saved) { p.creatingClips = false; if (saved > 0) { p.picking = false; p.picked = ({}) } }
     }
     Connections {
         target: App
@@ -745,7 +764,17 @@ FocusScope {
                             font.weight: Font.DemiBold
                         }
                         Text {
+                            visible: !p.picking && p.allMarkers.length > 0
+                            text: "Criar clipes"
+                            color: Theme.accent
+                            font.pixelSize: 12
+                            ToolTip.visible: createClipsArea.containsMouse
+                            ToolTip.text: "Escolha os eventos que viram clipe"
+                            MouseArea { id: createClipsArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: p.picking = true }
+                        }
+                        Text {
                             visible: Object.keys(p.hiddenKinds).length > 0
+                            Layout.leftMargin: 8
                             text: "Mostrar todos"
                             color: Theme.accent
                             font.pixelSize: 12
@@ -815,14 +844,27 @@ FocusScope {
                             width: ListView.view.width
                             height: 38
                             hoverEnabled: true
-                            onClicked: { p.seek(Math.max(0, modelData.t - 3)); player.play() }
+                            readonly property bool chosen: !!p.picked[p.pickKey(modelData)]
+                            onClicked: {
+                                p.seek(Math.max(0, modelData.t - 3))
+                                if (p.picking) p.togglePick(modelData)
+                                else player.play()
+                            }
                             background: Rectangle {
                                 radius: 8
                                 color: evRow.now ? Theme.cardHi : evRow.hovered ? Theme.card : "transparent"
                             }
                             contentItem: RowLayout {
                                 spacing: 10
-                                EventBadge { Layout.leftMargin: 6; label: evRow.modelData.label; size: 24 }
+                                Rectangle {
+                                    visible: p.picking
+                                    Layout.leftMargin: 6
+                                    implicitWidth: 18; implicitHeight: 18; radius: 5
+                                    color: evRow.chosen ? Theme.accent : "transparent"
+                                    border.color: evRow.chosen ? Theme.accent : Theme.muted
+                                    Icon { anchors.centerIn: parent; visible: evRow.chosen; name: "check"; size: 14; color: "white" }
+                                }
+                                EventBadge { Layout.leftMargin: p.picking ? 0 : 6; label: evRow.modelData.label; size: 24 }
                                 Text {
                                     Layout.fillWidth: true
                                     elide: Text.ElideRight
@@ -836,6 +878,51 @@ FocusScope {
                                     color: Theme.muted
                                     font.pixelSize: 12
                                 }
+                            }
+                        }
+                    }
+                    // Clipes sugeridos: escolha dos eventos
+                    ColumnLayout {
+                        visible: p.picking
+                        Layout.fillWidth: true
+                        spacing: 8
+                        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                Layout.fillWidth: true
+                                wrapMode: Text.Wrap
+                                text: p.pickedCount === 0 ? "Marque os eventos que viram clipe."
+                                    : F.plural(p.pickedCount, "evento", "eventos") + " · os próximos viram um clipe só"
+                                color: Theme.muted
+                                font.pixelSize: 12
+                            }
+                            Text {
+                                text: p.pickedCount > 0 && p.pickedCount >= p.visibleMarkers.length ? "Nenhum" : "Todos"
+                                color: Theme.accent
+                                font.pixelSize: 12
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        if (p.pickedCount > 0 && p.pickedCount >= p.visibleMarkers.length) { p.picked = ({}); return }
+                                        const s = {}
+                                        for (const m of p.visibleMarkers) s[p.pickKey(m)] = m
+                                        p.picked = s
+                                    }
+                                }
+                            }
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            AButton { text: "Cancelar"; enabled: !p.creatingClips; onClicked: { p.picking = false; p.picked = ({}) } }
+                            Item { Layout.fillWidth: true }
+                            AButton {
+                                text: p.creatingClips ? "Criando…" : "Criar clipes"
+                                iconName: "scissors"
+                                primary: true
+                                enabled: p.pickedCount > 0 && !p.creatingClips
+                                onClicked: p.createClips()
                             }
                         }
                     }

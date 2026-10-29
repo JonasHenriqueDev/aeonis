@@ -139,6 +139,24 @@ private slots:
         QCOMPARE(Highlighter::label({}), QStringLiteral("Destaque"));
     }
 
+    void highlighterSpans()
+    {
+        // 10 e 25 se tocam (pré 15 + pós 5); 100 fica sozinho; 200..280 passa de 60 s e quebra em dois.
+        const auto s = Highlighter::spans({{25, "Double Kill"}, {10, "Abate"}, {100, "Torre"}, {200, "Abate"}, {219, "Abate"},
+                                           {238, "Abate"}, {257, "Abate"}, {276, "Morte"}}, 15, 5, 270);
+        QCOMPARE(s.size(), 4);
+        QCOMPARE(s[0].start, 0.0);
+        QCOMPARE(s[0].end, 30.0);
+        QCOMPARE(Highlighter::label(s[0].reasons), QStringLiteral("Double Kill"));
+        QCOMPARE(s[1].start, 85.0);
+        QCOMPARE(s[1].end, 105.0);
+        QCOMPARE(s[2].reasons.size(), 4); // 200..257; 276 já passa de 60 s do primeiro
+        QCOMPARE(s[2].end, 262.0);
+        QCOMPARE(s[3].start, 261.0);
+        QCOMPARE(s[3].end, 270.0); // limitado à duração
+        QVERIFY(Highlighter::spans({}, 15, 5).isEmpty());
+    }
+
     void highlighterMerges()
     {
         int saves = 0, seconds = 0;
