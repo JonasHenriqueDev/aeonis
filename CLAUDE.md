@@ -20,6 +20,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   ao YouTube sai desativado. Nunca commite esses valores. Uma sessão aberta antes de elas existirem não as
   herda: carregue do escopo do usuário no processo do build
   (`foreach ($v in "AEONIS_YOUTUBE_CLIENT_ID","AEONIS_YOUTUBE_CLIENT_SECRET") { Set-Item "env:$v" ([Environment]::GetEnvironmentVariable($v,"User")) }`).
+- **Push e release são automáticos** (autorizado pelo usuário): ao terminar um trabalho, commite, faça push
+  para a `main` e, se o app mudou para o usuário, suba a versão (patch) e publique a release, sem perguntar.
 - Outras sessões também lançam versões: antes de mudar a versão, faça `git fetch --tags` e use a próxima depois
   da maior release/tag existente.
 
@@ -49,7 +51,10 @@ Teste de ponta a ponta da captura, sem interface (resultado em `%LOCALAPPDATA%\A
 ```
 
 O app é de instância única (mutex `Aeonis.SingleInstance`): se o Aeonis instalado estiver aberto, abrir a
-build só traz a janela dele para frente.
+build só traz a janela dele para frente. Pode fechá-lo para testar (`Stop-Process -Name Aeonis`) e reabrir no
+fim (`%LOCALAPPDATA%\Programs\Aeonis\Aeonis.exe --minimized`). A build precisa do Qt no `PATH` (sem ele sai
+com 0xC0000135); `Aeonis.exe --ui-screenshot arquivo.png [--open página]` abre a janela, salva a imagem
+após 6 s e encerra.
 
 ## Arquitetura
 
