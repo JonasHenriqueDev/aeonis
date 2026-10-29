@@ -59,6 +59,32 @@ FocusScope {
     focus: true
     onFullscreenChanged: wake()
 
+    // Zoom da linha do tempo: trecho visível [viewA, viewA + viewLen]. `zoomLen` 0 = vídeo inteiro.
+    property real zoomLen: 0
+    property real zoomStart: 0
+    readonly property real viewLen: zoomLen > 0 && zoomLen < duration ? zoomLen : duration
+    readonly property real viewA: Math.max(0, Math.min(duration - viewLen, zoomStart))
+    readonly property bool zoomed: viewLen < duration
+    function setView(a, len) {
+        len = Math.max(Math.min(2, duration), Math.min(duration, len))
+        zoomLen = len >= duration ? 0 : len
+        zoomStart = Math.max(0, Math.min(duration - len, a))
+    }
+    // Zoom mantendo o instante `t` no mesmo lugar da linha do tempo.
+    function zoomAt(t, factor) {
+        const frac = viewLen > 0 ? (t - viewA) / viewLen : 0
+        const len = viewLen * factor
+        setView(t - frac * Math.max(Math.min(2, duration), Math.min(duration, len)), len)
+    }
+    function zoomToTrim() {
+        if (!trim) return
+        const pad = Math.max(1, (trim.b - trim.a) * 0.15)
+        setView(trim.a - pad, trim.b - trim.a + 2 * pad)
+    }
+    // Tocando com zoom: a janela acompanha a posição.
+    onPositionChanged: if (zoomed && !timelineArea.pressed && (position < viewA || position > viewA + viewLen))
+        zoomStart = position - viewLen * 0.1
+
     function wake() { idle = false; if (fullscreen) idleTimer.restart() }
     Timer { id: idleTimer; interval: 2500; onTriggered: p.idle = true }
     Component.onCompleted: {
@@ -69,6 +95,8 @@ FocusScope {
 
     onMediaChanged: {
         trim = null
+        zoomLen = 0
+        zoomStart = 0
         started = win.pendingSeek >= 0
         poster = ""
         if (media)
@@ -309,30 +337,36 @@ FocusScope {
                     Behavior on opacity { NumberAnimation { duration: 250 } }
                     HoverHandler { id: controlsHover }
 
-                    // Linha do tempo com marcadores de eventos e a faixa do corte
+                    // Linha do tempo com marcadores de eventos e a faixa do corte. Roda do mouse: zoom no
+                    // ponto do cursor; Shift + roda (ou roda horizontal): anda pelo trecho ampliado.
                     Item {
                         id: timeline
                         Layout.fillWidth: true
                         Layout.leftMargin: p.fullscreen ? 16 : 0
                         Layout.rightMargin: p.fullscreen ? 16 : 0
-                        Layout.preferredHeight: 46
-                        // Marcas de tempo, como no Outplayed: o passo cresce com a duração (~10 marcas).
+                        Layout.preferredHeight: p.zoomed ? 54 : 46
+                        clip: true
+                        function tx(t) { return p.viewLen > 0 ? (t - p.viewA) / p.viewLen * width : 0 }
+                        function tAt(x) { return p.viewA + Math.max(0, Math.min(width, x)) / width * p.viewLen }
+                        // Marcas de tempo, como no Outplayed: o passo cresce com o trecho visível (~10 marcas).
                         readonly property real tick: {
-                            const steps = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800]
-                            return steps.find(s => p.duration / s <= 12) || 3600
+                            const steps = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800]
+                            return steps.find(s => p.viewLen / s <= 12) || 3600
                         }
+                        readonly property int firstTick: Math.ceil(p.viewA / tick - 1e-6)
                         Repeater {
-                            model: p.duration > 0 ? Math.floor(p.duration / timeline.tick) + 1 : 0
+                            model: p.viewLen > 0 ? Math.floor((p.viewA + p.viewLen) / timeline.tick + 1e-6) - timeline.firstTick + 1 : 0
                             Item {
                                 required property int index
-                                readonly property real t: index * timeline.tick
-                                x: t / p.duration * timeline.width
-                                y: timeline.height - 14
+                                readonly property real t: (timeline.firstTick + index) * timeline.tick
+                                x: timeline.tx(t)
+                                y: 32
                                 Rectangle { x: 0; y: -5; width: 1; height: 4; color: Theme.faint }
                                 Text {
-                                    x: index === 0 ? 0 : -width / 2
+                                    x: parent.x < 1 ? 0 : -width / 2
                                     visible: x + parent.x + width <= timeline.width
-                                    text: timeline.tick >= 60 ? Math.round(parent.t / 60) + "m" : F.dur(parent.t)
+                                    text: timeline.tick >= 60 ? Math.round(parent.t / 60) + "m"
+                                        : timeline.tick < 1 ? F.precise(parent.t) : F.dur(parent.t)
                                     color: Theme.faint
                                     font.pixelSize: 10
                                 }
@@ -349,8 +383,8 @@ FocusScope {
                         Rectangle {
                             visible: p.trim !== null && p.duration > 0
                             anchors.verticalCenter: track.verticalCenter
-                            x: p.trim ? p.trim.a / p.duration * parent.width : 0
-                            width: p.trim ? (p.trim.b - p.trim.a) / p.duration * parent.width : 0
+                            x: p.trim ? timeline.tx(p.trim.a) : 0
+                            width: p.trim ? timeline.tx(p.trim.b) - x : 0
                             height: 14
                             radius: 4
                             color: Qt.rgba(0.545, 0.36, 0.965, 0.35)
@@ -358,7 +392,7 @@ FocusScope {
                         }
                         Rectangle {
                             anchors.verticalCenter: track.verticalCenter
-                            width: p.duration > 0 ? p.position / p.duration * parent.width : 0
+                            width: p.duration > 0 ? Math.max(0, timeline.tx(p.position)) : 0
                             height: 6
                             radius: 3
                             gradient: Gradient {
@@ -368,9 +402,18 @@ FocusScope {
                             }
                         }
                         MouseArea {
+                            id: timelineArea
                             anchors.fill: parent
-                            onPressed: mouse => p.seek(mouse.x / width * p.duration)
-                            onPositionChanged: mouse => { if (pressed) p.seek(mouse.x / width * p.duration) }
+                            onPressed: mouse => p.seek(timeline.tAt(mouse.x))
+                            onPositionChanged: mouse => { if (pressed) p.seek(timeline.tAt(mouse.x)) }
+                            onWheel: wheel => {
+                                if (p.duration <= 0) return
+                                const dx = wheel.angleDelta.x !== 0 ? wheel.angleDelta.x : (wheel.modifiers & Qt.ShiftModifier) ? wheel.angleDelta.y : 0
+                                if (dx !== 0)
+                                    p.setView(p.viewA - dx / 120 * p.viewLen * 0.15, p.viewLen)
+                                else if (wheel.angleDelta.y !== 0)
+                                    p.zoomAt(timeline.tAt(wheel.x), Math.pow(0.8, wheel.angleDelta.y / 120))
+                            }
                         }
                         Repeater {
                             model: p.duration > 0 ? p.visibleMarkers : []
@@ -378,7 +421,8 @@ FocusScope {
                                 required property var modelData
                                 label: modelData.label
                                 size: markArea.containsMouse ? 24 : 20
-                                x: modelData.t / p.duration * timeline.width - size / 2
+                                visible: modelData.t >= p.viewA - 1 && modelData.t <= p.viewA + p.viewLen + 1
+                                x: timeline.tx(modelData.t) - size / 2
                                 anchors.verticalCenter: track.verticalCenter
                                 border.color: Theme.bg
                                 border.width: 1.5
@@ -392,6 +436,39 @@ FocusScope {
                                     hoverEnabled: true
                                     onClicked: { p.seek(Math.max(0, parent.modelData.t - 3)); player.play() }
                                 }
+                            }
+                        }
+                        // Com zoom: o vídeo inteiro em miniatura, com o trecho visível arrastável.
+                        Rectangle {
+                            visible: p.zoomed
+                            y: parent.height - 5
+                            width: parent.width
+                            height: 4
+                            radius: 2
+                            color: Theme.cardHi
+                            Rectangle {
+                                visible: p.trim !== null
+                                x: p.trim ? p.trim.a / p.duration * parent.width : 0
+                                width: p.trim ? Math.max(2, (p.trim.b - p.trim.a) / p.duration * parent.width) : 0
+                                height: parent.height
+                                color: Qt.rgba(0.545, 0.36, 0.965, 0.6)
+                            }
+                            Rectangle {
+                                x: p.duration > 0 ? p.viewA / p.duration * parent.width : 0
+                                width: p.duration > 0 ? Math.max(6, p.viewLen / p.duration * parent.width) : 0
+                                height: parent.height
+                                radius: 2
+                                color: overviewArea.containsMouse || overviewArea.pressed ? Theme.text : Theme.muted
+                            }
+                            MouseArea {
+                                id: overviewArea
+                                anchors.fill: parent
+                                anchors.topMargin: -6
+                                hoverEnabled: true
+                                cursorShape: Qt.SizeHorCursor
+                                function go(x) { p.setView(x / width * p.duration - p.viewLen / 2, p.viewLen) }
+                                onPressed: mouse => go(mouse.x)
+                                onPositionChanged: mouse => { if (pressed) go(mouse.x) }
                             }
                         }
                     }
@@ -474,6 +551,30 @@ FocusScope {
                             }
                         }
                         Item { Layout.fillWidth: true }
+                        AButton {
+                            flat: true
+                            iconName: "zoomOut"
+                            enabled: p.zoomed
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Diminuir o zoom da linha do tempo (roda do mouse sobre ela)"
+                            onClicked: p.zoomAt(p.position, 2)
+                        }
+                        AButton {
+                            flat: true
+                            iconName: "zoomIn"
+                            enabled: p.duration > 0 && p.viewLen > Math.min(2, p.duration) + 0.01
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Aumentar o zoom na posição atual (roda do mouse sobre a linha do tempo)"
+                            onClicked: p.zoomAt(p.position, 0.5)
+                        }
+                        AButton {
+                            visible: p.zoomed
+                            flat: true
+                            text: "Tudo"
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Mostrar o vídeo inteiro na linha do tempo"
+                            onClicked: p.setView(0, p.duration)
+                        }
                         AButton {
                             id: muteButton
                             property bool muted: false

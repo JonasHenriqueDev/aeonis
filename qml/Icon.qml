@@ -57,6 +57,8 @@ Item {
         search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
         check: '<path d="M5 12.5 10 17l9-10"/>',
         plus: '<path d="M12 5v14M5 12h14"/>',
+        zoomIn: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M8 11h6M11 8v6"/>',
+        zoomOut: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M8 11h6"/>',
         clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'
     })
 
