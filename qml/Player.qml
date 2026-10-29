@@ -107,12 +107,20 @@ FocusScope {
 
     function setFullscreenToggle() { win.setPlayerFullscreen(!fullscreen); forceActiveFocus() }
     function seek(t) { started = true; priming = false; player.position = Math.max(0, Math.min(duration, t)) * 1000 }
-    function setMark(which) {
+    // Ajuste de uma ponta (alça arrastada, ±0,1 s): não cruza a outra e mantém pelo menos meio segundo.
+    function setMarkAt(which, time) {
         if (!trim) return
         const t = Object.assign({}, trim)
-        t[which] = position
-        if (t.a > t.b) { const x = t.a; t.a = t.b; t.b = x }
+        time = Math.max(0, Math.min(duration, time))
+        t[which] = which === "a" ? Math.min(time, t.b - 0.5) : Math.max(time, t.a + 0.5)
         trim = t
+    }
+    // Começa o corte: vídeo curto, inteiro; longo, 30 s a partir da posição atual (com zoom nesse trecho).
+    function startTrim() {
+        if (duration <= 60) { trim = { a: 0, b: duration }; return }
+        const b = Math.min(duration, position + 30)
+        trim = { a: Math.max(0, b - 30), b: b }
+        zoomToTrim()
     }
 
     Keys.onPressed: event => {
@@ -124,6 +132,8 @@ FocusScope {
         else if (event.key === Qt.Key_Left) seek(position - 5)
         else if (event.key === Qt.Key_Period) { player.pause(); seek(position + 1 / 60) }
         else if (event.key === Qt.Key_Comma) { player.pause(); seek(position - 1 / 60) }
+        else if (event.key === Qt.Key_I && trim) setMarkAt("a", position)
+        else if (event.key === Qt.Key_O && trim) setMarkAt("b", position)
         else if (event.key === Qt.Key_Delete) win.confirmDelete(media)
         else return
         event.accepted = true
@@ -233,7 +243,7 @@ FocusScope {
                 ToolTip.text: "Vídeos salvos nunca são apagados pelo limite de armazenamento."
                 onClicked: App.setSaved([p.media.path], !p.media.saved)
             }
-            AButton { text: "Cortar"; iconName: "scissors"; enabled: p.duration > 0; onClicked: p.trim = { a: 0, b: p.duration } }
+            AButton { text: "Cortar"; iconName: "scissors"; enabled: p.duration > 0; onClicked: p.startTrim() }
             AButton {
                 readonly property var yt: App.youtube
                 readonly property bool sending: yt.uploading && youtubeDialog.norm(yt.uploadPath) === youtubeDialog.norm(p.media ? p.media.path : "")
@@ -438,6 +448,62 @@ FocusScope {
                                 }
                             }
                         }
+                        // Corte: arrastar a faixa move o trecho todo; as alças nas pontas ajustam início e fim.
+                        MouseArea {
+                            visible: p.trim !== null && p.duration > 0
+                            x: p.trim ? timeline.tx(p.trim.a) + 6 : 0
+                            width: p.trim ? Math.max(0, timeline.tx(p.trim.b) - timeline.tx(p.trim.a) - 12) : 0
+                            anchors.verticalCenter: track.verticalCenter
+                            height: 14
+                            z: 3
+                            cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                            property real grabT: 0
+                            property var grabTrim: null
+                            onPressed: mouse => { grabT = timeline.tAt(mapToItem(timeline, mouse.x, 0).x); grabTrim = p.trim }
+                            onPositionChanged: mouse => {
+                                if (!pressed || !grabTrim) return
+                                const len = grabTrim.b - grabTrim.a
+                                const a = Math.max(0, Math.min(p.duration - len, grabTrim.a + timeline.tAt(mapToItem(timeline, mouse.x, 0).x) - grabT))
+                                p.trim = { a: a, b: a + len }
+                                p.seek(a)
+                            }
+                        }
+                        Repeater {
+                            model: p.trim !== null && p.duration > 0 ? ["a", "b"] : []
+                            Rectangle {
+                                id: handle
+                                required property string modelData
+                                readonly property real t: p.trim ? p.trim[modelData] : 0
+                                x: timeline.tx(t) - width / 2
+                                anchors.verticalCenter: track.verticalCenter
+                                width: 10
+                                height: 24
+                                radius: 3
+                                z: 4
+                                color: handleArea.pressed || handleArea.containsMouse ? Qt.lighter(Theme.accent, 1.2) : Theme.accent
+                                border.color: Theme.bg
+                                Column {
+                                    anchors.centerIn: parent
+                                    spacing: 2
+                                    Repeater { model: 3; Rectangle { width: 4; height: 1; color: "white"; opacity: 0.8 } }
+                                }
+                                ToolTip.visible: handleArea.containsMouse || handleArea.pressed
+                                ToolTip.text: (modelData === "a" ? "Início " : "Fim ") + F.precise(t)
+                                MouseArea {
+                                    id: handleArea
+                                    anchors.fill: parent
+                                    anchors.margins: -5
+                                    hoverEnabled: true
+                                    cursorShape: Qt.SizeHorCursor
+                                    onPositionChanged: mouse => {
+                                        if (!pressed) return
+                                        p.setMarkAt(handle.modelData, timeline.tAt(mapToItem(timeline, mouse.x, 0).x))
+                                        p.seek(handle.t)
+                                    }
+                                    onPressed: p.seek(handle.t)
+                                }
+                            }
+                        }
                         // Com zoom: o vídeo inteiro em miniatura, com o trecho visível arrastável.
                         Rectangle {
                             visible: p.zoomed
@@ -608,12 +674,41 @@ FocusScope {
                             anchors.margins: 10
                             spacing: 10
                             Icon { name: "scissors"; size: 18 }
-                            Text { text: "Início"; color: Theme.muted }
-                            Text { text: p.trim ? F.precise(p.trim.a) : ""; color: Theme.text; font.bold: true }
-                            AButton { text: "Marcar aqui"; onClicked: p.setMark("a") }
-                            Text { text: "Fim"; color: Theme.muted }
-                            Text { text: p.trim ? F.precise(p.trim.b) : ""; color: Theme.text; font.bold: true }
-                            AButton { text: "Marcar aqui"; onClicked: p.setMark("b") }
+                            // Início e fim: clique no tempo vai até ele; ‹ › ajustam 0,1 s; "Aqui" (I / O) usa a posição atual.
+                            Repeater {
+                                model: [{ k: "a", name: "Início", key: "I" }, { k: "b", name: "Fim", key: "O" }]
+                                RowLayout {
+                                    required property var modelData
+                                    spacing: 4
+                                    Text { text: modelData.name; color: Theme.muted; Layout.rightMargin: 4 }
+                                    AButton { flat: true; text: "‹"; implicitWidth: 26; onClicked: { p.setMarkAt(modelData.k, p.trim[modelData.k] - 0.1); p.seek(p.trim[modelData.k]) } }
+                                    Text {
+                                        text: p.trim ? F.precise(p.trim[modelData.k]) : ""
+                                        color: Theme.text
+                                        font.bold: true
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: p.seek(p.trim[parent.parent.modelData.k])
+                                        }
+                                    }
+                                    AButton { flat: true; text: "›"; implicitWidth: 26; onClicked: { p.setMarkAt(modelData.k, p.trim[modelData.k] + 0.1); p.seek(p.trim[modelData.k]) } }
+                                    AButton {
+                                        text: "Aqui"
+                                        ToolTip.visible: hovered
+                                        ToolTip.text: "Marcar na posição atual (" + modelData.key + ")"
+                                        onClicked: p.setMarkAt(modelData.k, p.position)
+                                    }
+                                    Item { implicitWidth: 6 }
+                                }
+                            }
+                            AButton {
+                                flat: true
+                                iconName: "zoomIn"
+                                ToolTip.visible: hovered
+                                ToolTip.text: "Ampliar a linha do tempo no trecho do corte"
+                                onClicked: p.zoomToTrim()
+                            }
                             Item { Layout.fillWidth: true }
                             Text { text: p.trim ? F.dur(p.trim.b - p.trim.a) + " · sem re-encode" : ""; color: Theme.muted; font.pixelSize: 12 }
                             AButton { text: "Cancelar"; onClicked: p.trim = null }
