@@ -2,6 +2,7 @@
 #include "core/Log.h"
 #include "core/Paths.h"
 
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
 #include <QElapsedTimer>
@@ -12,6 +13,7 @@
 #include <QNetworkReply>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QSettings>
 #include <QStandardPaths>
 
 namespace aeonis {
@@ -53,6 +55,15 @@ bool AutoUpdater::recentlyTried(const QString &version) const
         return false;
     const QDateTime at = QDateTime::fromString(parts[1], Qt::ISODate);
     return at.isValid() && at.secsTo(QDateTime::currentDateTimeUtc()) < 24 * 3600;
+}
+
+bool AutoUpdater::installIncomplete() const
+{
+    const QDir dir(QCoreApplication::applicationDirPath());
+    if (!QFile::exists(dir.filePath(QStringLiteral("unins000.exe"))))
+        return false;
+    const QSettings marker(dir.filePath(QStringLiteral("install.ini")), QSettings::IniFormat);
+    return marker.value(QStringLiteral("Install/Version")).toString() != version();
 }
 
 void AutoUpdater::fail(const QString &reason)
@@ -135,7 +146,8 @@ void AutoUpdater::check()
                 break;
             }
         }
-        if (tag.isEmpty() || compareVersions(tag, version()) <= 0 || url.isEmpty()) {
+        const int newer = compareVersions(tag, version());
+        if (tag.isEmpty() || newer < 0 || (newer == 0 && !installIncomplete()) || url.isEmpty()) {
             m_assetUrl.clear();
             setStatus(QStringLiteral("Você está na versão mais recente (%1).").arg(version()), false);
             return;

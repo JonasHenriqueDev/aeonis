@@ -95,5 +95,7 @@ Um processo só, C++20 + Qt 6 + FFmpeg (libav* linkado estaticamente via vcpkg).
 - **Ícones**: `assets/icons/*.png` vão no qrc (`app/AppIcon`); `assets/aeonis.ico` vai no exe pelo `.rc`. O
   processo usa o AppUserModelID `Aeonis.Aeonis`, o mesmo dos atalhos criados em `installer/aeonis.iss`.
 
-O instalador usa o mesmo AppId da versão C# para atualizar no lugar. A versão do app vem de
+O instalador usa o mesmo AppId da versão C# para atualizar no lugar. Ele apaga o `install.ini` no início e o
+grava depois de todos os arquivos: sem esse marcador da versão atual, o app reinstala a release mais recente
+(`AutoUpdater::installIncomplete`), mesmo com a atualização automática desligada. A versão do app vem de
 `project(Aeonis VERSION x.y.z)` no `CMakeLists.txt`.

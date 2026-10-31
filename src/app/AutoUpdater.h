@@ -37,6 +37,11 @@ public:
     /// pacote com versão errada): não tenta sozinho de novo, para não entrar em loop.
     bool recentlyTried(const QString &version) const;
 
+    /// Instalado pelo Setup, mas sem o marcador da versão atual: a instalação parou no meio (o exe
+    /// novo pode estar no lugar com arquivos faltando). A release mais recente é reinstalada,
+    /// mesmo sendo a versão atual. Portátil e build local não têm desinstalador e não entram aqui.
+    bool installIncomplete() const;
+
     /// Verificação automática: logo ao abrir e a cada 24 h.
     void setAutomatic(bool enabled);
 

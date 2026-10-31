@@ -81,6 +81,7 @@ private:
     void splitLongRecording();
     /// Atualização automática: instala a versão encontrada se nada estiver sendo jogado/gravado.
     void installUpdateIfIdle();
+    bool autoUpdates() const;
     void registerHotkeys();
     void enforceQuota();
     void updateUi();

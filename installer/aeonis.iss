@@ -61,9 +61,15 @@ Type: files; Name: "{app}\createdump.exe"
 ; Sem "{app}\*.dll": se a instalação for interrompida depois de apagar e antes de copiar, o app não abre
 ; mais (aconteceu no loop de atualização da 1.1.0). As DLLs do Qt/MSVC são sobrescritas pelo [Files].
 Type: filesandordirs; Name: "{app}\qml"
+; Marcador de instalação completa: some aqui e volta no [INI], depois de todos os arquivos.
+Type: files; Name: "{app}\install.ini"
 
 [Files]
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[INI]
+; Sem ele, o app sabe que a instalação parou no meio e se repara (AutoUpdater::installIncomplete).
+Filename: "{app}\install.ini"; Section: "Install"; Key: "Version"; String: "{#AppVersion}"
 
 [Icons]
 ; AppUserModelID igual ao do processo (main.cpp): a janela agrupa com o atalho fixado e usa o ícone novo.
@@ -84,6 +90,7 @@ Filename: "{app}\Aeonis.exe"; Parameters: "--after-update"; Description: "{cm:La
 Filename: "{app}\Aeonis.exe"; Parameters: "--after-update {code:AfterUpdateArgs}"; Flags: nowait runasoriginaluser; Check: IsUpdate
 
 [UninstallDelete]
+Type: files; Name: "{app}\install.ini"
 ; Remove só caches/buffer; configurações e vídeos do usuário são preservados.
 Type: filesandordirs; Name: "{localappdata}\Aeonis\buffer"
 Type: filesandordirs; Name: "{localappdata}\Aeonis\thumbs"

@@ -67,9 +67,12 @@ App::App(bool minimized, QObject *parent) : QObject(parent), m_settings(Settings
     registerHotkeys();
 
     m_updater = new AutoUpdater(this);
-    m_updater->setAutomatic(m_settings.autoUpdate);
+    // Instalação incompleta se repara mesmo com a atualização automática desligada: a janela pode nem abrir.
+    if (m_updater->installIncomplete())
+        Log::warn(QStringLiteral("Instalação incompleta da versão %1: reinstalando.").arg(m_updater->version()));
+    m_updater->setAutomatic(autoUpdates());
     connect(m_updater, &AutoUpdater::updateFound, this, [this](const QString &version) {
-        if (m_settings.autoUpdate) {
+        if (autoUpdates()) {
             m_updater->prefetch(); // baixa em segundo plano; instala quando terminar (downloaded)
             return;
         }
@@ -144,6 +147,8 @@ App::App(bool minimized, QObject *parent) : QObject(parent), m_settings(Settings
         showWindow(QStringLiteral("matches"));
 }
 
+bool App::autoUpdates() const { return m_settings.autoUpdate || m_updater->installIncomplete(); }
+
 App::~App()
 {
     delete m_window; // a janela usa o Backend: sai antes dele
@@ -200,7 +205,7 @@ void App::installUpdateIfIdle()
 {
     // Atualiza sozinho ao abrir, mas nunca no meio de uma partida ou gravação;
     // nesse caso tenta de novo quando o jogo fechar ou a gravação terminar.
-    if (!m_settings.autoUpdate || m_exiting || !m_updater->available() || m_updater->busy()
+    if (!autoUpdates() || m_exiting || !m_updater->available() || m_updater->busy()
         || m_activeGame || m_engine.recording())
         return;
     if (!m_updater->ready()) { // ainda não baixado: baixa em segundo plano e volta aqui no fim
@@ -491,7 +496,7 @@ void App::applySettings(const Settings &updated)
     Settings::applyStartup(m_settings.startWithWindows);
     registerHotkeys();
     m_engine.updateSettings(m_settings);
-    m_updater->setAutomatic(m_settings.autoUpdate);
+    m_updater->setAutomatic(autoUpdates());
     enforceQuota();
     startDesktopBufferIfWanted();
     updateUi();
