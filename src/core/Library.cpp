@@ -89,20 +89,21 @@ QDateTime parseDate(const QString &input)
     const auto m = re.match(input.trimmed());
     if (!m.hasMatch())
         return QDateTime::fromString(input, Qt::ISODateWithMs);
+    const QStringView text = m.capturedView(1);
     QString ms = m.captured(2).left(3);
     while (ms.size() < 3) ms += QLatin1Char('0');
-    QDateTime dt = QDateTime::fromString(m.captured(1) + QLatin1Char('.') + ms, QStringLiteral("yyyy-MM-ddTHH:mm:ss.zzz"));
+    const QDate date(text.sliced(0, 4).toInt(), text.sliced(5, 2).toInt(), text.sliced(8, 2).toInt());
+    const QTime time(text.sliced(11, 2).toInt(), text.sliced(14, 2).toInt(), text.sliced(17, 2).toInt(), ms.toInt());
+    // Sem passar para o fuso local: é o gargalo ao ler milhares de linhas (cerca de 1 ms por data) e
+    // quem usa estas datas só compara instantes; formatDate converte quando precisa.
     const QString zone = m.captured(3);
-    if (zone == QLatin1String("Z")) {
-        dt.setTimeZone(QTimeZone::UTC);
-        dt = dt.toLocalTime();
-    } else if (!zone.isEmpty()) {
-        const int sign = zone[0] == QLatin1Char('-') ? -1 : 1;
-        const int offset = sign * (zone.mid(1, 2).toInt() * 3600 + zone.mid(4, 2).toInt() * 60);
-        dt.setTimeZone(QTimeZone::fromSecondsAheadOfUtc(offset));
-        dt = dt.toLocalTime();
-    }
-    return dt;
+    if (zone == QLatin1String("Z"))
+        return QDateTime(date, time, QTimeZone::UTC);
+    if (zone.isEmpty())
+        return QDateTime(date, time);
+    const int sign = zone[0] == QLatin1Char('-') ? -1 : 1;
+    const int offset = sign * (zone.mid(1, 2).toInt() * 3600 + zone.mid(4, 2).toInt() * 60);
+    return QDateTime(date, time, QTimeZone::fromSecondsAheadOfUtc(offset));
 }
 
 QString formatDate(const QDateTime &dt)

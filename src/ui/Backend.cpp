@@ -66,8 +66,7 @@ void Backend::setActive(bool active)
         refresh();
         emit settingsChanged();
     } else {
-        ++m_thumbGeneration;
-        m_library.clear();
+        ++m_thumbGeneration; // a biblioteca fica em memória: a janela abre com ela já pronta
     }
 }
 
@@ -85,8 +84,10 @@ void Backend::refresh()
         emit loadingChanged();
         if (!m_active)
             return;
-        m_library = r.data;
-        emit libraryChanged();
+        if (r.data != m_library) { // igual ao que está na tela: não refaz a interface à toa
+            m_library = r.data;
+            emit libraryChanged();
+        }
         generateThumbs(r.missingThumbs);
         if (m_reloadPending) {
             m_reloadPending = false;

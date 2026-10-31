@@ -115,6 +115,9 @@ private slots:
         QVERIFY(round.has_value());
         QCOMPARE(round->at, e->at);
         QVERIFY(Library::parseDate("2026-10-18T22:51:03").isValid());
+        QCOMPARE(Library::parseDate("2026-10-19T01:51:03.5Z").toMSecsSinceEpoch(),
+                 Library::parseDate("2026-10-18T22:51:03.500-03:00").toMSecsSinceEpoch());
+        QVERIFY(!Library::parseDate("2026-13-18T22:51:03Z").isValid());
     }
 
     void gameCatalog()
