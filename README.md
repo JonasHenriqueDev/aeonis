@@ -3,6 +3,10 @@
 Gravador de gameplay **open-source, standalone e sem anúncios** para Windows. Leve, sem conta, sem nuvem
 e sem telemetria.
 
+**C++20 · Qt 6/QML · Direct3D 11 (DXGI Desktop Duplication) · FFmpeg/libav (NVENC, AMF, Quick Sync, x264) · WASAPI**
+
+[**⬇ Baixar para Windows**](https://github.com/JonasHenriqueDev/aeonis/releases/latest) · licença GPL-3.0
+
 - **Replay buffer**: `Alt+F10` salva os últimos 30 s.
 - **Gravação longa**: `Alt+F9` inicia/para; ou o modo *Partida completa* grava cada partida inteira.
 - **Destaques automáticos** em **League of Legends** (abates, multikills, ace, dragão, barão, torre) e
