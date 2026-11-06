@@ -238,13 +238,13 @@ void App::onGameStarted(const GameDef &game, HMONITOR monitor, const QString &ex
                 else if (game.provider == QLatin1String("cs2"))
                     m_events = new Cs2Events(options, exe, [this](const QString &t, const QString &m) { notify(t, m); }, this);
                 if (m_events) {
-                    connect(m_events, &EventSource::highlight, this, [this](const QString &reason) {
-                        Library::event(m_engine.sessionId(), reason); // marcador na linha do tempo
+                    connect(m_events, &EventSource::highlight, this, [this](const QString &reason, double ago) {
+                        Library::event(m_engine.sessionId(), reason, ago); // marcador na linha do tempo
                         if (m_settings.mode != CaptureMode::SomentePartida)
                             m_highlighter->trigger(reason);
                     });
-                    connect(m_events, &EventSource::marker, this, [this](const QString &label) {
-                        Library::event(m_engine.sessionId(), label);
+                    connect(m_events, &EventSource::marker, this, [this](const QString &label, double ago) {
+                        Library::event(m_engine.sessionId(), label, ago);
                     });
                     connect(m_events, &EventSource::matchInfo, this, [this](const QJsonObject &info) {
                         Library::matchInfo(m_engine.sessionId(), info);

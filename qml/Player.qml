@@ -30,13 +30,16 @@ FocusScope {
     readonly property var visibleMarkers: allMarkers.filter(m => !hiddenKinds[F.eventIcon(m.label)])
     // Eventos visíveis em ordem (anterior/próximo).
     readonly property var markerTimes: visibleMarkers.map(m => m.t).sort((a, b) => a - b)
+    // Ao ir para um evento, começa um pouco antes dele para mostrar o que levou até ali.
+    readonly property real leadIn: 5
+    function seekEvent(t) { seek(Math.max(0, t - leadIn)) }
     function prevEvent() {
-        const before = markerTimes.filter(t => t - 3 < position - 1.5)
-        seek(before.length ? Math.max(0, before[before.length - 1] - 3) : 0)
+        const before = markerTimes.filter(t => t - leadIn < position - 1.5)
+        before.length ? seekEvent(before[before.length - 1]) : seek(0)
     }
     function nextEvent() {
-        const after = markerTimes.find(t => t - 3 > position + 0.5)
-        if (after !== undefined) seek(after - 3)
+        const after = markerTimes.find(t => t - leadIn > position + 0.5)
+        if (after !== undefined) seekEvent(after)
     }
     function setRate(r) { player.playbackRate = r }
     // Clipes sugeridos: eventos escolhidos na lista viram clipes (os próximos se juntam num só).
@@ -464,7 +467,7 @@ FocusScope {
                                     anchors.fill: parent
                                     anchors.margins: -4
                                     hoverEnabled: true
-                                    onClicked: { p.seek(Math.max(0, parent.modelData.t - 3)); player.play() }
+                                    onClicked: { p.seekEvent(parent.modelData.t); player.play() }
                                 }
                             }
                         }
@@ -849,13 +852,13 @@ FocusScope {
                         delegate: AbstractButton {
                             id: evRow
                             required property var modelData
-                            readonly property bool now: p.position >= modelData.t - 3 && p.position < modelData.t + 4
+                            readonly property bool now: p.position >= modelData.t - p.leadIn && p.position < modelData.t + 4
                             width: ListView.view.width
                             height: 38
                             hoverEnabled: true
                             readonly property bool chosen: !!p.picked[p.pickKey(modelData)]
                             onClicked: {
-                                p.seek(Math.max(0, modelData.t - 3))
+                                p.seekEvent(modelData.t)
                                 if (p.picking) p.togglePick(modelData)
                                 else player.play()
                             }

@@ -3,6 +3,7 @@
 //  - League of Legends: Live Client Data API (https://127.0.0.1:2999), durante a partida.
 //  - Counter-Strike 2: Game State Integration; o Aeonis instala um .cfg e recebe POSTs em 127.0.0.1:3005.
 
+#include <QDateTime>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QObject>
@@ -31,10 +32,10 @@ public:
     virtual void start() = 0;
 
 signals:
-    /// Evento que vira clipe (e marcador na linha do tempo).
-    void highlight(const QString &reason);
+    /// Evento que vira clipe (e marcador na linha do tempo). `ago`: há quantos segundos ele aconteceu no jogo.
+    void highlight(const QString &reason, double ago);
     /// Evento só para a linha do tempo (objetivo do time, morte sem clipe...).
-    void marker(const QString &label);
+    void marker(const QString &label, double ago);
     /// O relógio da partida começou (fim da tela de carregamento); `gameTime` em segundos.
     void clockStarted(double gameTime);
     /// Campeão, KDA, modo e resultado da partida (emitido quando muda).
@@ -81,6 +82,7 @@ private:
     int m_tick = 0;
     bool m_busy = false;
     bool m_clock = false;
+    QDateTime m_gameStart; // instante do 0:00 do relógio (para o EventTime de cada evento)
     bool m_iconRequested = false;
 };
 

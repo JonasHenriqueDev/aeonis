@@ -16,6 +16,7 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 
+#include <algorithm>
 #include <cmath>
 
 namespace aeonis {
@@ -101,8 +102,8 @@ void LeagueEvents::handleAll(const QByteArray &body)
     const double gameTime = root.value(QLatin1String("gameData")).toObject().value(QLatin1String("gameTime")).toDouble();
     if (!m_clock && gameTime > 0.5) {
         m_clock = true;
-        m_info.insert(QStringLiteral("gameStart"),
-                      QDateTime::currentDateTime().addMSecs(-qint64(gameTime * 1000)).toString(Qt::ISODateWithMs));
+        m_gameStart = QDateTime::currentDateTime().addMSecs(-qint64(gameTime * 1000));
+        m_info.insert(QStringLiteral("gameStart"), m_gameStart.toString(Qt::ISODateWithMs));
         Log::info(QStringLiteral("LoL: relógio da partida em %1 s.").arg(gameTime, 0, 'f', 1));
         emit clockStarted(gameTime);
         fetchQueue();
@@ -167,10 +168,16 @@ void LeagueEvents::handleEvents(const QJsonArray &events)
         }
         const QString hit = classify(e, m_me, opts);
         const QString mark = timelineLabel(e, m_me, m_team, m_allies);
+        // O evento chega até ~1 s depois (consulta a cada segundo): o EventTime diz quando ele aconteceu.
+        double ago = 0;
+        if (m_gameStart.isValid() && e.contains(QLatin1String("EventTime"))) {
+            const QDateTime at = m_gameStart.addMSecs(qint64(e.value(QLatin1String("EventTime")).toDouble() * 1000));
+            ago = std::clamp(at.msecsTo(QDateTime::currentDateTime()) / 1000.0, 0.0, 5.0);
+        }
         if (!hit.isEmpty())
-            emit highlight(hit);
+            emit highlight(hit, ago);
         else if (!mark.isEmpty())
-            emit marker(mark);
+            emit marker(mark, ago);
     }
 }
 
@@ -490,10 +497,10 @@ void Cs2Events::process(const QJsonObject &root)
                        : roundKills == 4 ? QStringLiteral("Quadra Kill")
                        : roundKills == 3 ? QStringLiteral("Triple Kill")
                        : roundKills == 2 ? QStringLiteral("Double Kill")
-                                         : QStringLiteral("Abate"));
+                                         : QStringLiteral("Abate"), 0);
     }
     if (m_options().deaths && m_lastDeaths && deaths > *m_lastDeaths)
-        emit highlight(QStringLiteral("Morte"));
+        emit highlight(QStringLiteral("Morte"), 0);
     m_lastKills = kills;
     m_lastDeaths = deaths;
 }

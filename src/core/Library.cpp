@@ -132,12 +132,12 @@ void sessionEnded(const QString &session)
     append(e);
 }
 
-void event(const QString &session, const QString &label)
+void event(const QString &session, const QString &label, double ago)
 {
     LibEntry e;
     e.t = QStringLiteral("event");
     e.s = session;
-    e.at = QDateTime::currentDateTime();
+    e.at = QDateTime::currentDateTime().addMSecs(-qint64(ago * 1000));
     e.label = label;
     append(e);
 }

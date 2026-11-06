@@ -33,7 +33,8 @@ namespace Library {
 
 void sessionStarted(const QString &session, const QString &game, const QString &exe);
 void sessionEnded(const QString &session);
-void event(const QString &session, const QString &label);
+/// `ago`: o evento aconteceu há tantos segundos (chegou atrasado).
+void event(const QString &session, const QString &label, double ago = 0);
 void matchInfo(const QString &session, const QJsonObject &info);
 /// `requestedAt`: momento em que o clipe foi pedido (fim do vídeo). `start`: início conhecido
 /// (gravação longa); senão é deduzido de requestedAt − duração.
