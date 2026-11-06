@@ -32,14 +32,28 @@ FocusScope {
     readonly property var markerTimes: visibleMarkers.map(m => m.t).sort((a, b) => a - b)
     // Ao ir para um evento, começa um pouco antes dele para mostrar o que levou até ali.
     readonly property real leadIn: 5
-    function seekEvent(t) { seek(Math.max(0, t - leadIn)) }
+    // Onde o lance de um evento começa. Multikill (Double/Triple/Quadra/Penta, Ace) é marcado na última kill:
+    // volta pelas kills anteriores da sequência (até 15 s entre uma e outra) até a primeira.
+    function killChainOf(m) {
+        const chain = [m.t]
+        if (!/kill|^ace$/i.test(m.label || "")) return chain
+        const kills = allMarkers.filter(k => /kill|abate|^ace$/i.test(k.label || "") && k.t <= m.t + 0.5)
+                                .map(k => k.t).sort((a, b) => b - a)
+        for (const t of kills) {
+            const start = chain[chain.length - 1]
+            if (t < start && start - t <= 15 && m.t - t <= 90) chain.push(t)
+        }
+        return chain
+    }
+    function playStartOf(m) { const c = killChainOf(m); return c[c.length - 1] }
+    function seekEvent(m) { seek(Math.max(0, playStartOf(m) - leadIn)) }
     function prevEvent() {
         const before = markerTimes.filter(t => t - leadIn < position - 1.5)
-        before.length ? seekEvent(before[before.length - 1]) : seek(0)
+        before.length ? seek(Math.max(0, before[before.length - 1] - leadIn)) : seek(0)
     }
     function nextEvent() {
         const after = markerTimes.find(t => t - leadIn > position + 0.5)
-        if (after !== undefined) seekEvent(after)
+        if (after !== undefined) seek(after - leadIn)
     }
     function setRate(r) { player.playbackRate = r }
     // Clipes sugeridos: eventos escolhidos na lista viram clipes (os próximos se juntam num só).
@@ -56,7 +70,15 @@ FocusScope {
     readonly property int pickedCount: Object.keys(picked).length
     function createClips() {
         creatingClips = true
-        App.clipsFromEvents(media.path, Object.keys(picked).map(k => ({ t: picked[k].t, label: picked[k].label })), compress)
+        // Multikill: as kills anteriores da sequência entram junto, para o clipe pegar desde a primeira.
+        const list = []
+        for (const k of Object.keys(picked)) {
+            const m = picked[k]
+            list.push({ t: m.t, label: m.label })
+            for (const t of killChainOf(m).slice(1))
+                list.push({ t: t, label: m.label })
+        }
+        App.clipsFromEvents(media.path, list, compress)
     }
     property bool priming: false // carregando o primeiro quadro (mudo), depois pausa
     property bool started: false // já tocou ou mudou de posição: a capa some
@@ -467,7 +489,7 @@ FocusScope {
                                     anchors.fill: parent
                                     anchors.margins: -4
                                     hoverEnabled: true
-                                    onClicked: { p.seekEvent(parent.modelData.t); player.play() }
+                                    onClicked: { p.seekEvent(parent.modelData); player.play() }
                                 }
                             }
                         }
@@ -858,7 +880,7 @@ FocusScope {
                             hoverEnabled: true
                             readonly property bool chosen: !!p.picked[p.pickKey(modelData)]
                             onClicked: {
-                                p.seekEvent(modelData.t)
+                                p.seekEvent(modelData)
                                 if (p.picking) p.togglePick(modelData)
                                 else player.play()
                             }
