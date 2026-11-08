@@ -364,6 +364,37 @@ FocusScope {
                         cursorShape: p.controlsVisible ? Qt.ArrowCursor : Qt.BlankCursor
                         onPositionChanged: p.wake()
                         onDoubleClicked: win.setPlayerFullscreen(!p.fullscreen)
+                        // Roda do mouse sobre o vídeo: volume em passos de 5% (subir tira o mudo).
+                        onWheel: wheel => {
+                            p.wake()
+                            const steps = wheel.angleDelta.y / 120
+                            if (steps === 0) return
+                            if (steps > 0) muteButton.muted = false
+                            volumeSlider.value = Math.max(0, Math.min(1, Math.round((volumeSlider.value + steps * 0.05) * 100) / 100))
+                            volumeHint.show()
+                        }
+                    }
+                    // Aviso do volume ao girar a roda, some sozinho.
+                    Rectangle {
+                        id: volumeHint
+                        function show() { opacity = 1; volumeHintTimer.restart() }
+                        anchors.centerIn: parent
+                        width: volumeHintText.implicitWidth + 32
+                        height: 40
+                        radius: 20
+                        color: Qt.rgba(0, 0, 0, 0.6)
+                        opacity: 0
+                        visible: opacity > 0
+                        Behavior on opacity { NumberAnimation { duration: 150 } }
+                        Text {
+                            id: volumeHintText
+                            anchors.centerIn: parent
+                            text: muteButton.muted ? "Volume: mudo" : "Volume: " + Math.round(volumeSlider.value * 100) + "%"
+                            color: "white"
+                            font.pixelSize: 15
+                            font.weight: Font.DemiBold
+                        }
+                        Timer { id: volumeHintTimer; interval: 900; onTriggered: volumeHint.opacity = 0 }
                     }
                     Column {
                         anchors.centerIn: parent
