@@ -234,6 +234,18 @@ FocusScope {
         }
     }
 
+    // Botões laterais do mouse (voltar/avançar) em qualquer lugar do player: recuam e avançam 5 s,
+    // como as setas. Fica por baixo de tudo e só aceita esses botões, então os cliques normais
+    // continuam chegando aos controles.
+    MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.BackButton | Qt.ForwardButton
+        onPressed: mouse => {
+            p.wake()
+            p.seek(p.position + (mouse.button === Qt.ForwardButton ? 5 : -5))
+        }
+    }
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: p.fullscreen || p.embedded ? 0 : 20
