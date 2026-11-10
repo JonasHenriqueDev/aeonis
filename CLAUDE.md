@@ -99,3 +99,13 @@ O instalador usa o mesmo AppId da versão C# para atualizar no lugar. Ele apaga 
 grava depois de todos os arquivos: sem esse marcador da versão atual, o app reinstala a release mais recente
 (`AutoUpdater::installIncomplete`), mesmo com a atualização automática desligada. A versão do app vem de
 `project(Aeonis VERSION x.y.z)` no `CMakeLists.txt`.
+
+## Revisão e testes
+Ao terminar uma funcionalidade completa, chame o subagente
+testador e depois o revisor. Não chame para mudanças
+pequenas (texto, estilo, renomear variável, ajuste de
+configuração). Corrija os problemas que eles apontarem.
+Depois de corrigir, rode só o testador de novo, não o
+revisor. Se eu disser "sem revisão", pule os dois.
+
+O revisor não tem Bash: passe a ele a saída de `git diff` (e os arquivos novos) na mensagem.
