@@ -4,3 +4,4 @@ vcpkg_installed/
 *.user
 .vs/
 .mcp.json
+.claude/worktrees/
