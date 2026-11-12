@@ -224,18 +224,21 @@ void App::installUpdateIfIdle()
 void App::onGameStarted(const GameDef &game, HMONITOR monitor, const QString &exe)
 {
     m_activeGame = game;
+    m_gameExe = exe;
+    m_lastMatchSession.clear();
     auto start = [this, game, monitor, exe] {
         const HMONITOR target = m_settings.monitorIndex >= 0 ? Monitors::byIndex(m_settings.monitorIndex) : monitor;
         startEngine(game.name, target, exe, [this, game, exe](bool ok) {
             if (!ok)
                 return;
-            if (m_settings.mode != CaptureMode::Destaques)
-                enqueue([this] { m_engine.beginRecording(); }, [this] { updateUi(); });
-            if (m_settings.autoHighlights && !m_events) {
+            if (!m_events) {
                 auto options = [this] { return EventOptions{m_settings.clipDeaths, m_settings.clipAssists}; };
-                if (game.provider == QLatin1String("lol"))
+                // Deadlock: o início/fim da partida decide a gravação, então vale mesmo sem destaques automáticos.
+                if (game.provider == QLatin1String("deadlock"))
+                    m_events = new DeadlockEvents(options, exe, this);
+                else if (m_settings.autoHighlights && game.provider == QLatin1String("lol"))
                     m_events = new LeagueEvents(options, exe, this);
-                else if (game.provider == QLatin1String("cs2"))
+                else if (m_settings.autoHighlights && game.provider == QLatin1String("cs2"))
                     m_events = new Cs2Events(options, exe, [this](const QString &t, const QString &m) { notify(t, m); }, this);
                 if (m_events) {
                     connect(m_events, &EventSource::highlight, this, [this](const QString &reason, double ago) {
@@ -254,17 +257,37 @@ void App::onGameStarted(const GameDef &game, HMONITOR monitor, const QString &ex
                     connect(m_events, &EventSource::clockStarted, this, [this](double gameTime) {
                         enqueue([this, gameTime] { m_engine.moveRecordingStart(gameTime); }, [this] { updateUi(); });
                     });
-                    m_events->start();
+                    connect(m_events, &EventSource::matchStarted, this, &App::onMatchStarted);
+                    connect(m_events, &EventSource::matchEnded, this, &App::onMatchEnded);
+                    connect(m_events, &EventSource::matchDetectionUnavailable, this, [this] {
+                        notify(QStringLiteral("Deadlock: partidas não detectadas"),
+                               QStringLiteral("Adicione -condebug nas opções de inicialização do Deadlock na Steam para "
+                                              "gravar só as partidas. Até lá, a sessão inteira é gravada."),
+                               QSystemTrayIcon::Warning);
+                        if (m_settings.mode != CaptureMode::Destaques)
+                            enqueue([this] {
+                                if (m_engine.running() && !m_engine.recording()) {
+                                    m_engine.beginRecording();
+                                    m_pin = Pin::WholeSession;
+                                }
+                            }, [this] { updateUi(); });
+                    });
                 }
             }
-            const QString autoText = m_events ? QStringLiteral(" Destaques automáticos ativos.") : QString();
+            const bool byMatch = m_events && m_events->controlsRecording();
+            if (m_settings.mode != CaptureMode::Destaques && !byMatch)
+                enqueue([this] { m_engine.beginRecording(); }, [this] { updateUi(); });
+            if (m_events)
+                m_events->start();
+            const QString autoText = byMatch ? QStringLiteral(" Cada partida é gravada do início ao fim.")
+                                   : m_events ? QStringLiteral(" Destaques automáticos ativos.") : QString();
             notify(QStringLiteral("%1 detectado").arg(game.name),
                    QStringLiteral("Gravando com %1. %2 salva um clipe.%3")
                        .arg(m_engine.encoderLabel(), m_settings.hotkeySaveClip, autoText));
         });
     };
     if (m_engine.running())
-        stopEngineAndReport([start](bool) { start(); });
+        stopEngineAndReport([start](bool, const QString &) { start(); });
     else
         start();
 }
@@ -276,16 +299,105 @@ void App::onGameStopped(const GameDef &)
         m_events = nullptr;
     }
     m_highlighter->flush(); // entra na fila antes do encerramento
-    const QString session = m_engine.sessionId();
-    stopEngineAndReport([this, session](bool savedRecording) {
+    stopEngineAndReport([this](bool savedRecording, const QString &session) {
         m_activeGame.reset();
-        // Abre a partida para análise (se algo dela foi salvo).
-        if (m_settings.openMatchOnEnd && !m_exiting && !session.isEmpty()
-            && (savedRecording || m_lastClipSession == session))
-            showWindow(QStringLiteral("match:") + session);
+        // Abre a partida para análise (se algo dela foi salvo); no Deadlock, a última partida gravada.
+        const QString open = !session.isEmpty() && (savedRecording || m_lastClipSession == session) ? session : m_lastMatchSession;
+        m_lastMatchSession.clear();
+        if (m_settings.openMatchOnEnd && !m_exiting && !open.isEmpty())
+            showWindow(QStringLiteral("match:") + open);
         startDesktopBufferIfWanted();
         updateUi();
         installUpdateIfIdle();
+    });
+}
+
+void App::onMatchStarted()
+{
+    if (!m_activeGame)
+        return;
+    const QString game = m_activeGame->name, exe = m_gameExe;
+    const bool record = m_settings.mode != CaptureMode::Destaques;
+    m_highlighter->flush(); // destaque pendente fica na sessão anterior
+    struct Started {
+        QString previous, session;
+        QDateTime wholeStart;
+        ClipResult whole; // gravação da sessão inteira (o log só apareceu depois do aviso)
+    };
+    const QDateTime requestedAt = QDateTime::currentDateTime();
+    enqueue([this, record] {
+        Started s;
+        if (!m_engine.running())
+            return s;
+        if (m_engine.recording()) {
+            if (m_pin != Pin::WholeSession) // gravação manual em curso: segue nela
+                return s;
+            s.wholeStart = m_engine.recordingSince();
+            s.whole = m_engine.endRecording();
+        }
+        m_pin = Pin::None;
+        s.previous = m_engine.sessionId();
+        s.session = m_engine.newSession();
+        if (record) {
+            m_engine.beginRecording();
+            m_pin = Pin::Match;
+        }
+        return s;
+    }, [this, game, exe, requestedAt](Started s) {
+        if (s.session.isEmpty())
+            return;
+        if (s.whole) {
+            Library::clipSaved(s.previous, s.whole.path, QStringLiteral("full"), labelOf(s.whole.path), requestedAt,
+                               s.whole.duration, s.wholeStart);
+            enforceQuota();
+            emit libraryChanged();
+        }
+        Library::sessionEnded(s.previous);
+        Library::sessionStarted(s.session, game, exe);
+        updateUi();
+    });
+}
+
+void App::onMatchEnded()
+{
+    if (!m_activeGame)
+        return;
+    const QString game = m_activeGame->name, exe = m_gameExe;
+    struct Ended {
+        QString session, next;
+        QDateTime start;
+        ClipResult result;
+    };
+    m_highlighter->flush();
+    const QDateTime requestedAt = QDateTime::currentDateTime();
+    enqueue([this] {
+        Ended e;
+        // Gravação que a partida não abriu (manual ou sessão inteira): não é encerrada aqui.
+        if (!m_engine.running() || (m_engine.recording() && m_pin != Pin::Match))
+            return e;
+        e.session = m_engine.sessionId();
+        if (m_pin == Pin::Match) {
+            e.start = m_engine.recordingSince();
+            e.result = m_engine.endRecording();
+        }
+        m_pin = Pin::None;
+        e.next = m_engine.newSession(); // saguão e próxima partida ficam fora desta
+        return e;
+    }, [this, game, exe, requestedAt](Ended e) {
+        if (e.next.isEmpty())
+            return;
+        if (e.result) {
+            Library::clipSaved(e.session, e.result.path, QStringLiteral("full"), labelOf(e.result.path), requestedAt,
+                               e.result.duration, e.start);
+            notify(QStringLiteral("Partida salva"), QFileInfo(e.result.path).fileName());
+            enforceQuota();
+        }
+        if (e.result || m_lastClipSession == e.session)
+            m_lastMatchSession = e.session;
+        Library::sessionEnded(e.session);
+        Library::sessionStarted(e.next, game, exe);
+        emit libraryChanged();
+        updateUi();
     });
 }
 
@@ -304,6 +416,7 @@ void App::stopEngineAndReport(Done then)
         s.recordingStart = m_engine.recordingSince();
         s.wasRunning = m_engine.running();
         s.recording = m_engine.stop();
+        m_pin = Pin::None;
         return s;
     }, [this, requestedAt, then = std::move(then)](Stopped s) {
         if (s.recording) {
@@ -317,7 +430,7 @@ void App::stopEngineAndReport(Done then)
         emit libraryChanged();
         updateUi();
         if (then)
-            then(bool(s.recording));
+            then(bool(s.recording), s.session);
     });
 }
 
@@ -538,7 +651,7 @@ void App::exit()
     m_highlighter->flush();
     m_window->close();
     m_tray->hide(); // some na hora; uma partida em andamento ainda é salva antes de o processo sair
-    stopEngineAndReport([this](bool) {
+    stopEngineAndReport([this](bool, const QString &) {
         m_ops.waitForDone();
         QCoreApplication::quit();
     });

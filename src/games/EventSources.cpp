@@ -12,6 +12,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QRegularExpression>
 #include <QSslError>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -503,6 +504,174 @@ void Cs2Events::process(const QJsonObject &root)
         emit highlight(QStringLiteral("Morte"), 0);
     m_lastKills = kills;
     m_lastDeaths = deaths;
+}
+
+// ---------------------------------------------------------------- Deadlock
+
+namespace {
+
+// "11/08 19:37:41 ChangeGameState: ..." -> instante da linha (o log não tem o ano).
+QDateTime deadlockLineTime(const QString &line, const QDateTime &now)
+{
+    if (line.size() < 15 || line.at(2) != QLatin1Char('/') || line.at(14) != QLatin1Char(' '))
+        return {};
+    const QDate date(now.date().year(), line.mid(0, 2).toInt(), line.mid(3, 2).toInt());
+    const QTime time = QTime::fromString(line.mid(6, 8), QStringLiteral("HH:mm:ss"));
+    if (!date.isValid() || !time.isValid())
+        return {};
+    QDateTime at(date, time);
+    if (at > now.addDays(1)) // virada do ano
+        at = at.addYears(-1);
+    return at;
+}
+
+bool deadlockStartState(const QString &s)
+{
+    return s == QLatin1String("PreGameWait") || s == QLatin1String("GameInProgress");
+}
+
+} // namespace
+
+DeadlockEvents::DeadlockEvents(Options options, const QString &exePath, QObject *parent)
+    : EventSource(std::move(options), parent), m_path(logPath(exePath))
+{
+    m_timer.setInterval(1000);
+    connect(&m_timer, &QTimer::timeout, this, &DeadlockEvents::poll);
+}
+
+QString DeadlockEvents::logPath(const QString &exePath)
+{
+    if (exePath.isEmpty())
+        return {};
+    // ...\game\bin\win64\deadlock.exe -> ...\game\citadel\console.log
+    return QDir::cleanPath(QFileInfo(exePath).absolutePath() + QStringLiteral("/../../citadel/console.log"));
+}
+
+void DeadlockEvents::start()
+{
+    m_watchStart = QDateTime::currentDateTime();
+    const QFileInfo fi(m_path);
+    if (fi.exists()) {
+        m_offset = fi.size();
+        // Log recente (o Aeonis abriu com o jogo já aberto): o final dele diz onde o jogador está.
+        if (fi.lastModified() >= m_watchStart.addSecs(-60)) {
+            QFile f(m_path);
+            if (f.open(QIODevice::ReadOnly)) {
+                constexpr qint64 Tail = 1 << 20;
+                f.seek(std::max<qint64>(0, m_offset - Tail));
+                const QByteArray tail = f.read(Tail);
+                const int last = tail.lastIndexOf('\n');
+                m_pending = tail.mid(last + 1); // linha ainda incompleta: termina no próximo poll
+                replay(QString::fromUtf8(tail.left(std::max(0, last))).split(QLatin1Char('\n')));
+                m_live = true;
+                if (m_inMatch) {
+                    Log::info(QStringLiteral("Deadlock: partida em andamento em %1.").arg(m_map));
+                    emit matchStarted(0);
+                }
+            }
+        }
+    }
+    m_timer.start();
+}
+
+void DeadlockEvents::poll()
+{
+    const QFileInfo fi(m_path);
+    if (fi.exists()) {
+        if (fi.size() < m_offset) { // log recriado/limpo (jogo reaberto)
+            m_offset = 0;
+            m_pending.clear();
+        }
+        if (fi.size() > m_offset) {
+            QFile f(m_path);
+            if (f.open(QIODevice::ReadOnly) && f.seek(m_offset)) {
+                const QByteArray chunk = f.read(4 << 20);
+                m_offset += chunk.size();
+                m_pending += chunk;
+                m_live = true;
+                const int last = m_pending.lastIndexOf('\n');
+                if (last >= 0) {
+                    const QDateTime now = QDateTime::currentDateTime();
+                    for (const QByteArray &raw : m_pending.left(last).split('\n'))
+                        processLine(QString::fromUtf8(raw).trimmed(), now);
+                    m_pending.remove(0, last + 1);
+                }
+                if (m_pending.size() > (1 << 20)) // linha sem fim: descarta
+                    m_pending.clear();
+            }
+        }
+    }
+    if (!m_live && !m_gaveUp && m_watchStart.secsTo(QDateTime::currentDateTime()) > LiveTimeoutSeconds) {
+        m_gaveUp = true; // segue lendo: se o log aparecer depois, as partidas voltam a ser detectadas
+        Log::warn(QStringLiteral("Deadlock: %1 não está sendo escrito (falta -condebug nas opções de inicialização).")
+                      .arg(QDir::toNativeSeparators(m_path)));
+        emit matchDetectionUnavailable();
+    }
+}
+
+void DeadlockEvents::replay(const QStringList &lines)
+{
+    m_quiet = true;
+    for (const QString &line : lines)
+        processLine(line.trimmed());
+    m_quiet = false;
+}
+
+bool DeadlockEvents::isMatchMap() const
+{
+    return !m_map.isEmpty() && m_map != QLatin1String("<empty>") && !m_map.contains(QLatin1String("hideout"), Qt::CaseInsensitive);
+}
+
+void DeadlockEvents::endMatch(double ago)
+{
+    if (!m_inMatch)
+        return;
+    m_inMatch = false;
+    if (!m_quiet) {
+        Log::info(QStringLiteral("Deadlock: fim da partida em %1 (%2).").arg(m_map, m_state));
+        emit matchEnded(ago);
+    }
+}
+
+void DeadlockEvents::processLine(const QString &line, const QDateTime &now)
+{
+    static const QRegularExpression mapRe(QStringLiteral(R"re((?:Loading map|\[Client\] Map:) "([^"]*)")re"));
+    static const QRegularExpression stateRe(QStringLiteral(R"re((?:ChangeGameState|OnGameStateChanged): (\w+) \(\d+\))re"));
+    const QDateTime at = deadlockLineTime(line, now);
+    const double ago = at.isValid() ? std::clamp(at.msecsTo(now) / 1000.0, 0.0, 60.0) : 0.0;
+
+    if (const auto m = mapRe.match(line); m.hasMatch()) {
+        const QString map = m.captured(1);
+        if (map != m_map) {
+            endMatch(ago);
+            m_map = map;
+            m_state.clear();
+        }
+        return;
+    }
+    if (line.contains(QLatin1String("[Client] Disconnecting from server"))) {
+        endMatch(ago);
+        m_state.clear();
+        return;
+    }
+    const auto m = stateRe.match(line);
+    if (!m.hasMatch())
+        return;
+    const QString state = m.captured(1);
+    if (state == m_state) // servidor e cliente registram a mesma mudança
+        return;
+    m_state = state;
+    if (deadlockStartState(state)) {
+        if (!m_inMatch && isMatchMap()) {
+            m_inMatch = true;
+            if (!m_quiet) {
+                Log::info(QStringLiteral("Deadlock: início da partida em %1.").arg(m_map));
+                emit matchStarted(ago);
+            }
+        }
+    } else {
+        endMatch(ago); // PostGame/End/Abandoned, ou voltou a um estado anterior ao jogo
+    }
 }
 
 } // namespace aeonis

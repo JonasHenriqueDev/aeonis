@@ -62,6 +62,8 @@ public:
     /// descartando a tela de carregamento). Nunca recua.
     void moveRecordingStart(double secondsAgo);
     ClipResult endRecording();
+    /// Troca o id da sessão sem parar a captura (cada partida do Deadlock vira uma sessão no histórico).
+    QString newSession();
     /// Fecha a parte atual da gravação longa num MP4 e segue gravando numa parte nova, sem perder quadros
     /// (sessões de horas viram vários arquivos). `partStart` recebe o início da parte salva.
     ClipResult splitRecording(QDateTime *partStart = nullptr);

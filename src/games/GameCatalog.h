@@ -10,7 +10,7 @@ namespace aeonis {
 struct GameDef {
     QString name;
     QStringList processes; // nomes de processo sem ".exe"
-    QString provider;      // fonte de destaques automáticos ("lol", "cs2") ou vazio
+    QString provider;      // fonte de eventos do jogo ("lol", "cs2", "deadlock") ou vazio
 };
 
 namespace GameCatalog {

@@ -67,7 +67,7 @@ src/
 ├─ core/                     Paths, Log, Settings (settings.json), Library (library.jsonl), Media (libav), MediaCache
 ├─ capture/                  DesktopDuplication, Encoders, SegmentWriter, CaptureEngine, Clips (nomes, ★, limite)
 ├─ audio/                    AudioCapture (WASAPI loopback/microfone), AudioMixer (silêncio, mixagem, AAC)
-├─ games/                    GameCatalog, GameWatcher, Highlighter, EventSources (LoL, CS2)
+├─ games/                    GameCatalog, GameWatcher, Highlighter, EventSources (LoL, CS2, Deadlock)
 ├─ app/                      App (controlador), TrayIcon, Hotkeys, AutoUpdater, WindowHost
 └─ ui/                       Backend (objeto do QML), LibraryModel, SettingsSchema
 qml/                         Main, Sidebar, MatchesView, ClipsView, Player, SettingsView, Theme…
@@ -85,6 +85,8 @@ O plano da migração para C++ está em [docs/PLANO_CPP.md](docs/PLANO_CPP.md).
 - Monitor girado (retrato) ainda não é corrigido; monitores HDR são gravados em SDR (8 bits).
 - Destaques automáticos só em LoL e CS2 (os demais jogos não oferecem API pública de eventos).
 - Ao abrir o CS2 pela primeira vez, o Aeonis instala `gamestate_integration_aeonis.cfg`; reinicie o jogo uma vez.
+- Deadlock: para gravar cada partida do início ao fim (e não a sessão inteira), adicione `-condebug` nas opções de
+  inicialização do jogo na Steam; o Aeonis lê o `game\citadel\console.log`. Sem ele, grava a sessão inteira.
 
 ## Licença
 [GPL-3.0-or-later](LICENSE). Você pode usar, estudar, modificar e redistribuir o Aeonis à vontade; quem

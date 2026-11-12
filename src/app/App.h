@@ -65,7 +65,7 @@ signals:
 
 private:
     /// Recebe se uma gravação longa foi salva.
-    using Done = std::function<void(bool savedRecording)>;
+    using Done = std::function<void(bool savedRecording, const QString &session)>;
 
     /// Enfileira `work` (na fila da captura) e roda `done` na UI com o resultado.
     template <typename Work, typename Then>
@@ -76,6 +76,9 @@ private:
     void saveClip(int seconds, const QString &label, const QString &kind);
     void onGameStarted(const GameDef &game, HMONITOR monitor, const QString &exe);
     void onGameStopped(const GameDef &game);
+    /// Deadlock: cada partida vira uma sessão própria e a gravação longa vai do início ao fim dela.
+    void onMatchStarted();
+    void onMatchEnded();
     void startDesktopBufferIfWanted();
     /// Gravação longa passou de CaptureEngine::PartSeconds: salva a parte e segue numa nova.
     void splitLongRecording();
@@ -104,6 +107,12 @@ private:
     bool m_windowBeforeUpdate = false; // reabre a janela se a atualização falhar
     std::optional<GameDef> m_activeGame;
     QString m_lastClipSession; // sessão do último clipe salvo (abre a partida ao terminar)
+    QString m_lastMatchSession; // última partida gravada pelo início/fim da fonte de eventos (Deadlock)
+    QString m_gameExe;
+    // Quem abriu a gravação longa em curso (só lido/escrito na fila da captura): a partida do Deadlock,
+    // o modo sessão inteira por falta de -condebug, ou nenhum dos dois (gravação manual/outros jogos).
+    enum class Pin { None, Match, WholeSession };
+    Pin m_pin = Pin::None;
     bool m_starting = false;
     bool m_exiting = false;
     bool m_splitting = false;

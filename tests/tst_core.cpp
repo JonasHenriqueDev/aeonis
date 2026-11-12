@@ -14,6 +14,7 @@
 #include "share/YouTube.h"
 #include "ui/LibraryModel.h"
 
+#include <QDir>
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -219,6 +220,53 @@ private slots:
         QCOMPARE(info.value("cs").toInt(), 140);
         QCOMPARE(info.value("mode").toString(), QStringLiteral("Summoner's Rift"));
         QCOMPARE(LeagueEvents::queueName(420), QStringLiteral("Ranqueada Solo/Duo"));
+    }
+
+    void deadlockEvents()
+    {
+        QCOMPARE(QDir::fromNativeSeparators(DeadlockEvents::logPath(QStringLiteral("D:/S/Deadlock/game/bin/win64/deadlock.exe"))),
+                 QStringLiteral("D:/S/Deadlock/game/citadel/console.log"));
+        DeadlockEvents dl([] { return EventOptions{}; }, {});
+        QSignalSpy started(&dl, &EventSource::matchStarted), ended(&dl, &EventSource::matchEnded);
+        const QDateTime now(QDate(2026, 11, 8), QTime(19, 50, 0));
+        auto feed = [&](const char *text) {
+            for (const QString &line : QString::fromUtf8(text).split(QLatin1Char('\n')))
+                dl.processLine(line.trimmed(), now);
+        };
+        // Saguão (hideout): também passa por GameInProgress, mas não é partida.
+        feed(R"(11/08 19:37:32 Loading map "dl_hideout"
+                11/08 19:37:32 [Client] Disconnecting from server: NETWORK_DISCONNECT_LOOPDEACTIVATE
+                11/08 19:37:40 [Client] Map: "dl_hideout"
+                11/08 19:37:41 ChangeGameState: PreGameWait (6)
+                11/08 19:37:41 ChangeGameState: GameInProgress (7)
+                11/08 19:37:41 OnGameStateChanged: GameInProgress (7))");
+        QCOMPARE(started.count(), 0);
+        // Partida: começa no PreGameWait (servidor e cliente repetem o estado) e acaba no PostGame.
+        feed(R"(11/08 19:38:00 [Client] Disconnecting from server: NETWORK_DISCONNECT_DISCONNECT_BY_USER
+                11/08 19:38:05 [Client] Map: "dl_streets"
+                11/08 19:38:10 OnGameStateChanged: WaitForMapToLoad (5)
+                11/08 19:49:50 OnGameStateChanged: PreGameWait (6)
+                11/08 19:49:50 ChangeGameState: PreGameWait (6)
+                11/08 19:49:55 OnGameStateChanged: GameInProgress (7))");
+        QCOMPARE(started.count(), 1);
+        QCOMPARE(started.first().first().toDouble(), 10.0); // a linha é de 10 s atrás
+        QVERIFY(dl.inMatch());
+        feed("11/08 19:49:58 OnGameStateChanged: PostGame (8)\n11/08 19:49:59 OnGameStateChanged: End (10)");
+        QCOMPARE(ended.count(), 1);
+        QVERIFY(!dl.inMatch());
+        // Sair no meio (desconectar) também encerra.
+        feed("11/08 19:49:59 OnGameStateChanged: PreGameWait (6)\n11/08 19:50:00 [Client] Disconnecting from server: X");
+        QCOMPARE(started.count(), 2);
+        QCOMPARE(ended.count(), 2);
+        // Replay (Aeonis aberto no meio da partida) só reconstrói o estado, sem emitir.
+        DeadlockEvents late([] { return EventOptions{}; }, {});
+        QSignalSpy lateStarted(&late, &EventSource::matchStarted);
+        late.replay({QStringLiteral("11/08 19:38:05 [Client] Map: \"dl_streets\""),
+                     QStringLiteral("11/08 19:40:00 OnGameStateChanged: GameInProgress (7)")});
+        QVERIFY(late.inMatch());
+        QCOMPARE(late.map(), QStringLiteral("dl_streets"));
+        QCOMPARE(lateStarted.count(), 0);
+        QVERIFY(late.controlsRecording());
     }
 
     void cs2Events()

@@ -2,6 +2,9 @@
 // Fontes de eventos que disparam destaques. Usam só APIs oficiais e locais dos próprios jogos:
 //  - League of Legends: Live Client Data API (https://127.0.0.1:2999), durante a partida.
 //  - Counter-Strike 2: Game State Integration; o Aeonis instala um .cfg e recebe POSTs em 127.0.0.1:3005.
+//  - Deadlock: não tem GSI nem API ao vivo (a Web API da Steam só conhece partidas encerradas); o início e o
+//    fim da partida saem do console.log do jogo (opção de inicialização -condebug), que registra o mapa e
+//    cada mudança de estado (PreGameWait, GameInProgress, PostGame...).
 
 #include <QDateTime>
 #include <QJsonArray>
@@ -40,6 +43,15 @@ signals:
     void clockStarted(double gameTime);
     /// Campeão, KDA, modo e resultado da partida (emitido quando muda).
     void matchInfo(const QJsonObject &info);
+    /// Só fontes que controlam a gravação (`controlsRecording`): a partida começou/acabou há `ago` segundos.
+    void matchStarted(double ago);
+    void matchEnded(double ago);
+    /// A fonte não consegue ver o início/fim das partidas: grave a sessão inteira, como nos outros jogos.
+    void matchDetectionUnavailable();
+
+public:
+    /// true: a gravação longa segue `matchStarted`/`matchEnded` em vez de durar a sessão inteira do jogo.
+    virtual bool controlsRecording() const { return false; }
 
 protected:
     Options m_options;
@@ -106,6 +118,43 @@ private:
     QTcpServer *m_server = nullptr;
     std::optional<int> m_lastKills, m_lastDeaths;
     QString m_lastMap;
+};
+
+class DeadlockEvents : public EventSource {
+    Q_OBJECT
+public:
+    /// Sem o log ficar ativo nesse tempo, desiste (sem -condebug o jogo não escreve o console.log).
+    static constexpr int LiveTimeoutSeconds = 120;
+
+    /// `exePath`: ...\Deadlock\game\bin\win64\deadlock.exe (o log fica em ...\game\citadel\console.log).
+    DeadlockEvents(Options options, const QString &exePath, QObject *parent = nullptr);
+    void start() override;
+    bool controlsRecording() const override { return true; }
+
+    static QString logPath(const QString &exePath);
+    /// Processa uma linha do console.log (público para os testes). `now`: relógio para calcular o atraso.
+    void processLine(const QString &line, const QDateTime &now = QDateTime::currentDateTime());
+    /// Lê o trecho final do log sem emitir nada, só para saber o mapa e o estado atuais.
+    void replay(const QStringList &lines);
+    bool inMatch() const { return m_inMatch; }
+    QString map() const { return m_map; }
+
+private:
+    void poll();
+    bool isMatchMap() const;
+    void endMatch(double ago);
+
+    QTimer m_timer;
+    QString m_path;
+    qint64 m_offset = 0;
+    QByteArray m_pending; // linha incompleta no fim da última leitura
+    QDateTime m_watchStart;
+    bool m_live = false;
+    bool m_gaveUp = false;
+    bool m_quiet = false; // durante o replay
+    QString m_map;
+    QString m_state;
+    bool m_inMatch = false;
 };
 
 } // namespace aeonis

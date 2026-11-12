@@ -488,6 +488,15 @@ ClipResult CaptureEngine::splitRecording(QDateTime *partStart)
     return r;
 }
 
+QString CaptureEngine::newSession()
+{
+    std::lock_guard lock(m_mutex);
+    if (!m_running)
+        return {};
+    m_sessionId = QUuid::createUuid().toString(QUuid::Id128).left(12);
+    return m_sessionId;
+}
+
 ClipResult CaptureEngine::endRecording()
 {
     QString dir;
