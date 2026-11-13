@@ -257,6 +257,36 @@ void Backend::trim(const QString &path, double start, double end, bool compress)
     });
 }
 
+QVariantMap Backend::trimEstimate(const QString &path, double start, double end, bool compress)
+{
+    QVariantMap m;
+    const QString source = safeVideo(path);
+    if (source.isEmpty() || end <= start)
+        return m;
+    // Cache por arquivo, refeito se o tamanho mudar (arquivo substituído); falhas não ficam guardadas.
+    const qint64 size = QFileInfo(source).size();
+    auto it = m_sourceInfo.find(source);
+    if (it == m_sourceInfo.end() || it->bytes != size) {
+        const Media::SourceInfo probed = Media::probe(source);
+        if (!probed.ok || probed.duration <= 0)
+            return m;
+        if (m_sourceInfo.size() > 64)
+            m_sourceInfo.clear();
+        it = m_sourceInfo.insert(source, probed);
+    }
+    const Media::SourceInfo &s = *it;
+    qint64 bytes = qint64(double(s.bytes) * std::min(1.0, (end - start) / s.duration));
+    if (compress) {
+        const Media::CompressPlan plan = Media::compressPlan(s, end - start);
+        bytes = std::min(bytes, plan.estimatedBytes); // nunca maior que a fatia original
+        m.insert(QStringLiteral("height"), std::min(plan.height, s.height));
+        m.insert(QStringLiteral("fps"), qRound(plan.fps));
+    }
+    m.insert(QStringLiteral("bytes"), double(bytes));
+    m.insert(QStringLiteral("overLimit"), bytes > Media::DiscordLimitBytes);
+    return m;
+}
+
 void Backend::clipsFromEvents(const QString &path, const QVariantList &events, bool compress)
 {
     const QString source = safeVideo(path);

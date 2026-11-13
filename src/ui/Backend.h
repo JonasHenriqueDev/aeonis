@@ -10,6 +10,10 @@
 
 #include <atomic>
 
+#include "core/Media.h"
+
+#include <QHash>
+
 namespace aeonis {
 
 class App;
@@ -47,6 +51,9 @@ public:
     Q_INVOKABLE void deleteClips(const QStringList &paths);
     /// `compress`: re-encoda para um arquivo menor (Media::trim).
     Q_INVOKABLE void trim(const QString &path, double start, double end, bool compress = false);
+    /// Tamanho previsto do corte: { bytes, overLimit (passa de 20 MB, limite do Discord), height, fps }.
+    /// Sem `compress`, é a fatia do arquivo; com, o teto da compressão (que mira menos de 20 MB).
+    Q_INVOKABLE QVariantMap trimEstimate(const QString &path, double start, double end, bool compress);
     /// Clipes sugeridos: um clipe por grupo de eventos escolhidos ({ t, label }) do vídeo, com os segundos
     /// antes/depois das configurações. Responde com eventClipsDone.
     Q_INVOKABLE void clipsFromEvents(const QString &path, const QVariantList &events, bool compress = false);
@@ -96,6 +103,7 @@ private:
     bool m_active = false;
     bool m_loading = false;
     QVariantMap m_deadlock;
+    QHash<QString, Media::SourceInfo> m_sourceInfo; // trimEstimate: lido uma vez por vídeo
     bool m_reloadPending = false;
     std::atomic<int> m_thumbGeneration{0};
 };

@@ -191,8 +191,25 @@ struct FrameDeleter {
     void operator()(AVFrame *f) const { av_frame_free(&f); }
 };
 
-/// Corte com re-encode da imagem (x264, CRF 26, até 1080p) para um arquivo menor; o áudio é copiado.
-RemuxResult compressRange(const QString &source, const QString &output, double start, double end)
+SourceInfo infoOf(AVFormatContext *in, int v, int a)
+{
+    SourceInfo s;
+    if (v < 0)
+        return s;
+    AVStream *vst = in->streams[v];
+    s.ok = true;
+    s.duration = in->duration > 0 ? in->duration / double(AV_TIME_BASE) : 0;
+    s.width = vst->codecpar->width;
+    s.height = vst->codecpar->height;
+    const AVRational fps = av_guess_frame_rate(in, vst, nullptr);
+    s.fps = fps.num > 0 && fps.den > 0 ? av_q2d(fps) : 0;
+    if (a >= 0)
+        s.audioBitrate = in->streams[a]->codecpar->bit_rate > 0 ? in->streams[a]->codecpar->bit_rate : 160'000;
+    return s;
+}
+
+/// Corte com re-encode da imagem (x264, CompressPlan) para caber no Discord; o áudio é copiado.
+RemuxResult compressRange(const QString &source, const QString &output, double start, double end, double scale)
 {
     RemuxResult r;
     Input in = openInput(source, true, &r.error);
@@ -225,7 +242,8 @@ RemuxResult compressRange(const QString &source, const QString &output, double s
         r.error = QStringLiteral("tamanho da imagem desconhecido");
         return r;
     }
-    const int outH = std::min(srcH, 1080) & ~1;
+    const CompressPlan plan = compressPlan(infoOf(in.get(), v, a), end - start, scale);
+    const int outH = std::max(2, std::min(srcH, plan.height) & ~1);
     const int outW = std::max(2, int(std::lround(double(srcW) * outH / srcH)) & ~1);
     Codec enc(avcodec_alloc_context3(encoder));
     enc->width = outW;
@@ -233,10 +251,19 @@ RemuxResult compressRange(const QString &source, const QString &output, double s
     enc->pix_fmt = AV_PIX_FMT_YUV420P;
     enc->time_base = vst->time_base;
     const AVRational fps = av_guess_frame_rate(in.get(), vst, nullptr);
-    if (fps.num > 0 && fps.den > 0) {
+    const double srcFps = fps.num > 0 && fps.den > 0 ? av_q2d(fps) : 0;
+    // Menos quadros por segundo que a origem (60 -> 30): descarta quadros pelo horário.
+    const bool dropFrames = plan.fps > 0 && srcFps > plan.fps + 1;
+    if (dropFrames) {
+        enc->framerate = AVRational{int(std::lround(plan.fps)), 1};
+        enc->gop_size = std::max(1, int(2 * plan.fps));
+    } else if (srcFps > 0) {
         enc->framerate = fps;
         enc->gop_size = std::max(1, 2 * fps.num / fps.den);
     }
+    // CRF 26 com teto de taxa (VBV): trechos curtos mantêm a qualidade, longos ficam na meta de tamanho.
+    enc->rc_max_rate = plan.videoBitrate;
+    enc->rc_buffer_size = int(std::min<qint64>(plan.videoBitrate, std::numeric_limits<int>::max()));
     enc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     enc->thread_count = 0;
     AVDictionary *opts = nullptr;
@@ -272,6 +299,8 @@ RemuxResult compressRange(const QString &source, const QString &output, double s
         SwsContext *sws = nullptr;
         bool videoDone = false, audioDone = a < 0, failed = false;
         qint64 frames = 0;
+        const double keepEveryUs = dropFrames ? 1e6 / plan.fps : 0;
+        double nextKeepUs = double(startUs);
 
         auto drainEncoder = [&] {
             while (!failed && avcodec_receive_packet(enc.get(), out.get()) == 0) {
@@ -288,7 +317,13 @@ RemuxResult compressRange(const QString &source, const QString &output, double s
                 const int64_t us = pts == AV_NOPTS_VALUE ? -1 : av_rescale_q(pts, vst->time_base, AV_TIME_BASE_Q) - originUs;
                 if (us > endUs)
                     videoDone = true;
-                if (us >= startUs && us <= endUs) {
+                bool keep = us >= startUs && us <= endUs;
+                if (keep && dropFrames) {
+                    keep = us + keepEveryUs / 2 >= nextKeepUs;
+                    if (keep)
+                        nextKeepUs = std::max(nextKeepUs + keepEveryUs, double(us) + keepEveryUs / 2);
+                }
+                if (keep) {
                     sws = sws_getCachedContext(sws, frame->width, frame->height, AVPixelFormat(frame->format), outW, outH,
                                                AV_PIX_FMT_YUV420P, SWS_BICUBIC, nullptr, nullptr, nullptr);
                     if (sws && av_frame_make_writable(scaled.get()) >= 0) {
@@ -351,6 +386,36 @@ RemuxResult compressRange(const QString &source, const QString &output, double s
 }
 
 } // namespace
+
+SourceInfo probe(const QString &file)
+{
+    Input in = openInput(file, true);
+    if (!in)
+        return {};
+    SourceInfo s = infoOf(in.get(), firstStream(in.get(), AVMEDIA_TYPE_VIDEO), firstStream(in.get(), AVMEDIA_TYPE_AUDIO));
+    s.bytes = QFileInfo(file).size();
+    return s;
+}
+
+CompressPlan compressPlan(const SourceInfo &source, double seconds, double scale)
+{
+    constexpr double Ceiling = 8e6;  // acima disto o CRF 26 já basta (1080p60)
+    constexpr double Floor = 250e3;  // abaixo disto a imagem fica inaceitável: não cabe
+    const double secs = std::max(0.5, seconds);
+    const double audio = double(source.audioBitrate);
+    const double total = CompressTargetBytes * 8.0 * 0.96 * scale / secs; // ~4% de contêiner
+    double video = std::min(total - audio, Ceiling);
+    CompressPlan p;
+    if (video < Floor)
+        video = Floor;
+    const int height = video >= 4.5e6 ? 1080 : video >= 2e6 ? 720 : video >= 0.9e6 ? 540 : 480;
+    p.height = std::min(source.height > 0 ? source.height : 1080, height) & ~1;
+    p.fps = source.fps > 31 && video < 3e6 ? 30 : source.fps;
+    p.videoBitrate = qint64(video);
+    p.estimatedBytes = qint64((video + audio) * secs / 8 * 1.03);
+    p.fits = p.estimatedBytes <= DiscordLimitBytes;
+    return p;
+}
 
 double duration(const QString &file)
 {
@@ -530,8 +595,37 @@ RemuxResult concat(const QStringList &segments, const QString &output, bool fast
 
 RemuxResult trim(const QString &source, const QString &output, double start, double end, bool compress)
 {
-    if (compress)
-        return compressRange(source, output, start, end);
+    if (compress) {
+        // O CRF com teto quase sempre cabe de primeira; se passar do limite, refaz com a meta proporcionalmente
+        // menor (só adianta se o trecho cabe no plano: trechos longos demais saem do mesmo jeito).
+        // A nova tentativa vai para um arquivo à parte: se falhar ou não diminuir, fica a anterior.
+        RemuxResult best = compressRange(source, output, start, end, 1.0);
+        if (!best.ok || !compressPlan(probe(source), end - start).fits)
+            return best;
+        const QString retry = output + QStringLiteral(".retry.mp4");
+        double scale = 1.0;
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            const qint64 size = QFileInfo(output).size();
+            if (size <= DiscordLimitBytes)
+                break;
+            Log::info(QStringLiteral("Corte comprimido com %1 MB: refazendo para caber em 20 MB.").arg(size / 1e6, 0, 'f', 1));
+            scale *= 0.92 * double(CompressTargetBytes) / double(size);
+            const RemuxResult r = compressRange(source, retry, start, end, scale);
+            if (!r.ok || QFileInfo(retry).size() >= size) {
+                QFile::remove(retry);
+                break;
+            }
+            QFile::remove(output);
+            if (!QFile::rename(retry, output)) {
+                QFile::remove(retry);
+                best.ok = false;
+                best.error = QStringLiteral("não foi possível substituir o corte");
+                return best;
+            }
+            best = r;
+        }
+        return best;
+    }
     RemuxResult r;
     Input in = openInput(source, true, &r.error);
     if (!in)

@@ -80,12 +80,11 @@ FocusScope {
         }
         App.clipsFromEvents(media.path, list, compress)
     }
-    property bool priming: false // carregando o primeiro quadro (mudo), depois pausa
     property bool started: false // já tocou ou mudou de posição: a capa some
-    property string primedUrl: "" // vídeo cujo primeiro quadro já foi carregado (só uma vez por vídeo)
+    property string primedUrl: "" // vídeo já carregado (a posição pendente é aplicada uma vez por vídeo)
     property string poster: ""    // capa em alta resolução (gerada ao abrir; até lá, a miniatura)
+    property bool revealOnFrame: false // posição inicial pedida: tira a capa no primeiro quadro
     function togglePlay() {
-        priming = false
         started = true
         player.playbackState === MediaPlayer.PlayingState ? player.pause() : player.play()
     }
@@ -141,7 +140,8 @@ FocusScope {
         picked = ({})
         zoomLen = 0
         zoomStart = 0
-        started = win.pendingSeek >= 0
+        started = false
+        revealOnFrame = false
         poster = ""
         if (media)
             App.requestPoster(media.id, media.path)
@@ -150,7 +150,7 @@ FocusScope {
     }
 
     function setFullscreenToggle() { win.setPlayerFullscreen(!fullscreen); forceActiveFocus() }
-    function seek(t) { started = true; priming = false; player.position = Math.max(0, Math.min(duration, t)) * 1000 }
+    function seek(t) { started = true; player.position = Math.max(0, Math.min(duration, t)) * 1000 }
     // Ajuste de uma ponta (alça arrastada, ±0,1 s): não cruza a outra e mantém pelo menos meio segundo.
     function setMarkAt(which, time) {
         if (!trim) return
@@ -196,17 +196,19 @@ FocusScope {
     MediaPlayer {
         id: player
         videoOutput: video
-        onPlaybackStateChanged: if (playbackState === MediaPlayer.PlayingState && !p.priming) p.started = true
-        audioOutput: AudioOutput { id: audio; volume: volumeSlider.value; muted: muteButton.muted || p.priming }
+        onPlaybackStateChanged: if (playbackState === MediaPlayer.PlayingState) p.started = true
+        audioOutput: AudioOutput { id: audio; volume: volumeSlider.value; muted: muteButton.muted }
         onMediaStatusChanged: if (mediaStatus === MediaPlayer.LoadedMedia && p.media && p.primedUrl !== p.media.url) {
             p.primedUrl = p.media.url
+            // Sem play automático (nem um quadro "de aquecimento", que vazava som): a capa fica até o play.
+            // Em pausa (não parado), mudar a posição antes do play já mostra o quadro.
+            pause()
+            // Aberto num instante (marcador/partida): a capa só sai quando o quadro desse instante chegar.
             if (win.pendingSeek >= 0) {
-                p.seek(win.pendingSeek)
+                position = Math.max(0, win.pendingSeek) * 1000
                 win.pendingSeek = -1
+                p.revealOnFrame = true
             }
-            // Sem play automático: toca em silêncio só até o primeiro quadro aparecer e pausa ali.
-            p.priming = true
-            play()
         }
     }
 
@@ -226,12 +228,7 @@ FocusScope {
     }
     Connections {
         target: video.videoSink
-        function onVideoFrameChanged() {
-            if (p.priming) {
-                player.pause()
-                p.priming = false
-            }
-        }
+        function onVideoFrameChanged() { if (p.revealOnFrame) { p.revealOnFrame = false; p.started = true } }
     }
     // Excluindo este vídeo: solta o arquivo antes.
     Connections {
@@ -807,13 +804,31 @@ FocusScope {
                             }
                             Item { Layout.fillWidth: true }
                             Text { text: p.trim ? F.dur(p.trim.b - p.trim.a) + (p.compress ? "" : " · sem re-encode") : ""; color: Theme.muted; font.pixelSize: 12 }
+                            // Tamanho previsto e o limite de 20 MB do Discord.
+                            Text {
+                                readonly property var est: p.trim && p.media ? App.trimEstimate(p.media.path, p.trim.a, p.trim.b, p.compress) : ({})
+                                visible: est.bytes !== undefined
+                                color: est.overLimit ? Theme.kill : p.compress ? Theme.assist : Theme.muted
+                                font.pixelSize: 12
+                                font.weight: est.overLimit ? Font.DemiBold : Font.Normal
+                                text: !visible ? ""
+                                    : (p.compress ? "até ~" : "~") + (est.bytes / 1e6).toFixed(est.bytes < 1e7 ? 1 : 0) + " MB"
+                                      + (p.compress && est.height ? " · " + est.height + "p" + (est.fps ? est.fps : "") : "")
+                                      + (est.overLimit ? (p.compress ? " · longo demais para 20 MB" : " · passa de 20 MB (Discord)") : "")
+                                ToolTip.visible: tipArea.containsMouse
+                                ToolTip.text: est.overLimit && !p.compress ? "Ative Comprimir: o corte é re-encodado para ficar abaixo de 20 MB (limite do Discord)."
+                                            : est.overLimit ? "Mesmo comprimido não cabe em 20 MB: encurte o trecho."
+                                            : p.compress ? "Comprimido para ficar abaixo de 20 MB (limite do Discord); cenas simples ficam bem menores."
+                                            : "Cabe no limite de 20 MB do Discord."
+                                MouseArea { id: tipArea; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
+                            }
                             CheckBox {
                                 text: "Comprimir"
                                 checked: p.compress
                                 onToggled: p.compress = checked
                                 focusPolicy: Qt.NoFocus
                                 ToolTip.visible: hovered
-                                ToolTip.text: "Re-encoda em H.264 (até 1080p) para um arquivo bem menor. Demora mais."
+                                ToolTip.text: "Re-encoda em H.264 para ficar abaixo de 20 MB (limite do Discord). Demora mais."
                             }
                             AButton { text: "Cancelar"; onClicked: p.trim = null }
                             AButton {
@@ -1007,7 +1022,7 @@ FocusScope {
                                 onToggled: p.compress = checked
                                 focusPolicy: Qt.NoFocus
                                 ToolTip.visible: hovered
-                                ToolTip.text: "Re-encoda em H.264 (até 1080p) para arquivos bem menores. Demora mais."
+                                ToolTip.text: "Re-encoda em H.264 para cada clipe ficar abaixo de 20 MB (limite do Discord). Demora mais."
                             }
                             Item { Layout.fillWidth: true }
                             AButton {

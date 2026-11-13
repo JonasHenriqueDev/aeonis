@@ -30,9 +30,36 @@ struct RemuxResult {
 RemuxResult concat(const QStringList &segments, const QString &output, bool faststart = true,
                    const std::atomic<bool> *cancel = nullptr);
 
+/// Limite de envio do Discord: a compressão mira abaixo dele (CompressTargetBytes) e a interface avisa acima.
+constexpr qint64 DiscordLimitBytes = 20'000'000;
+constexpr qint64 CompressTargetBytes = 19'000'000;
+
+/// O que a compressão precisa saber do vídeo de origem.
+struct SourceInfo {
+    bool ok = false;
+    qint64 bytes = 0;
+    double duration = 0;
+    int width = 0, height = 0;
+    double fps = 0;
+    qint64 audioBitrate = 0; // 0 = sem áudio
+};
+SourceInfo probe(const QString &file);
+
+/// Como comprimir `seconds` de vídeo para caber em CompressTargetBytes: taxa de bits da imagem (x264 com
+/// CRF limitado por essa taxa), altura e fps de saída (trechos longos descem de resolução e para 30 fps).
+/// `scale` < 1 aperta a meta (nova tentativa quando o arquivo passou). `fits`: cabe em DiscordLimitBytes.
+struct CompressPlan {
+    int height = 0;
+    double fps = 0;
+    qint64 videoBitrate = 0;
+    qint64 estimatedBytes = 0; // teto: o CRF costuma gerar menos em cenas simples
+    bool fits = true;
+};
+CompressPlan compressPlan(const SourceInfo &source, double seconds, double scale = 1.0);
+
 /// Corta [start, end] (s) sem re-encode. Começa no keyframe anterior a `start` (como o -ss do ffmpeg).
-/// `compress`: re-encoda a imagem em H.264 (x264, CRF) com no máximo 1080p para um arquivo menor,
-/// começando exatamente em `start` (bem mais lento; o áudio é copiado).
+/// `compress`: re-encoda a imagem em H.264 (CompressPlan) mirando menos de 20 MB, começando exatamente em
+/// `start` (bem mais lento; o áudio é copiado). Se o arquivo passar do limite, refaz com a meta mais apertada.
 RemuxResult trim(const QString &source, const QString &output, double start, double end, bool compress = false);
 
 } // namespace aeonis::Media

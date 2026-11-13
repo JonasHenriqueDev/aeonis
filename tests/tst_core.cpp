@@ -17,6 +17,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSignalSpy>
@@ -268,6 +269,41 @@ private slots:
         QCOMPARE(late.map(), QStringLiteral("dl_streets"));
         QCOMPARE(lateStarted.count(), 0);
         QVERIFY(late.controlsRecording());
+    }
+
+    void compressPlanDiscord()
+    {
+        Media::SourceInfo src;
+        src.ok = true;
+        src.width = 1920;
+        src.height = 1080;
+        src.fps = 60;
+        src.audioBitrate = 160'000;
+        // Curto: qualidade cheia (teto de 8 Mbps, 1080p60), bem abaixo de 20 MB.
+        const Media::CompressPlan shortClip = Media::compressPlan(src, 10);
+        QCOMPARE(shortClip.height, 1080);
+        QCOMPARE(shortClip.fps, 60.0);
+        QVERIFY(shortClip.fits && shortClip.estimatedBytes < Media::DiscordLimitBytes);
+        // 2 min: cabe em 20 MB descendo resolução e fps.
+        const Media::CompressPlan twoMin = Media::compressPlan(src, 120);
+        QVERIFY(twoMin.fits);
+        QVERIFY(twoMin.estimatedBytes <= Media::DiscordLimitBytes);
+        QVERIFY(twoMin.height < 1080);
+        QCOMPARE(twoMin.fps, 30.0);
+        // Longo demais: nem no mínimo cabe.
+        QVERIFY(!Media::compressPlan(src, 20 * 60).fits);
+        // Nunca aumenta a resolução da origem.
+        src.height = 720;
+        QCOMPARE(Media::compressPlan(src, 10).height, 720);
+        // Compressão real de um vídeo (opcional): AEONIS_COMPRESS_SAMPLE=arquivo;inicio;fim
+        const QStringList sample = qEnvironmentVariable("AEONIS_COMPRESS_SAMPLE").split(QLatin1Char(';'));
+        if (sample.size() == 3) {
+            const QString out = m_data.path() + QStringLiteral("/compress_sample.mp4");
+            const Media::RemuxResult r = Media::trim(sample[0], out, sample[1].toDouble(), sample[2].toDouble(), true);
+            QVERIFY2(r.ok, qPrintable(r.error));
+            qWarning() << "COMPRESS" << QFileInfo(out).size() << "bytes" << r.duration << "s";
+            QVERIFY(QFileInfo(out).size() <= Media::DiscordLimitBytes);
+        }
     }
 
     void deadlockSetup()
