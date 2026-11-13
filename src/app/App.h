@@ -81,7 +81,7 @@ private:
     void onGameStopped(const GameDef &game);
     /// Deadlock: cada partida vira uma sessão própria e a gravação longa vai do início ao fim dela.
     void onMatchStarted();
-    void onMatchEnded();
+    void onMatchEnded(double ago);
     void startDesktopBufferIfWanted();
     /// Gravação longa passou de CaptureEngine::PartSeconds: salva a parte e segue numa nova.
     void splitLongRecording();

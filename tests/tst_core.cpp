@@ -269,6 +269,55 @@ private slots:
         QCOMPARE(late.map(), QStringLiteral("dl_streets"));
         QCOMPARE(lateStarted.count(), 0);
         QVERIFY(late.controlsRecording());
+
+        // Queda de conexão no meio (log real de 13/11): passa pelo saguão e reconecta à mesma partida.
+        DeadlockEvents rc([] { return EventOptions{}; }, {});
+        QSignalSpy rcStarted(&rc, &EventSource::matchStarted), rcEnded(&rc, &EventSource::matchEnded);
+        QDateTime clock(QDate(2026, 11, 13), QTime(18, 40, 51));
+        auto feedAt = [&](const char *text) {
+            for (const QString &line : QString::fromUtf8(text).split(QLatin1Char('\n')))
+                rc.processLine(line.trimmed(), clock);
+        };
+        feedAt(R"(11/13 18:39:27 [Client] Map: "start"
+                  11/13 18:40:22 OnGameStateChanged: PreGameWait (6)
+                  11/13 18:40:51 OnGameStateChanged: GameInProgress (7))");
+        QCOMPARE(rcStarted.count(), 1);
+        clock = QDateTime(QDate(2026, 11, 13), QTime(18, 43, 14));
+        feedAt(R"(11/13 18:42:53 [Client] Disconnecting from server: NETWORK_DISCONNECT_LOCALPROBLEM_MANYRELAYS
+                  11/13 18:42:53 [Client] Map: "<empty>"
+                  11/13 18:42:53 Loading map "dl_hideout"
+                  11/13 18:42:57 [Client] Map: "dl_hideout"
+                  11/13 18:42:57 ChangeGameState: WaitingForPlayersToJoin (2)
+                  11/13 18:42:57 ChangeGameState: HeroSelection (3)
+                  11/13 18:42:57 ChangeGameState: GameInProgress (7)
+                  11/13 18:43:04 [Client] Disconnecting from server: NETWORK_DISCONNECT_LOOPDEACTIVATE)");
+        QVERIFY(rc.waitingReconnect());
+        QCOMPARE(rcEnded.count(), 0);
+        feedAt(R"(11/13 18:43:08 [Client] Map: "start"
+                  11/13 18:43:14 OnGameStateChanged: GameInProgress (7))");
+        QVERIFY(rc.inMatch() && !rc.waitingReconnect());
+        QCOMPARE(rcStarted.count(), 1); // mesma gravação
+        QCOMPARE(rcEnded.count(), 0);
+        clock = QDateTime(QDate(2026, 11, 13), QTime(19, 25, 41));
+        feedAt(R"(11/13 19:25:31 OnGameStateChanged: PostGame (8)
+                  11/13 19:25:41 OnGameStateChanged: End (11)
+                  11/13 19:25:41 [Client] Disconnecting from server: NETWORK_DISCONNECT_DISCONNECT_BY_USER)");
+        QCOMPARE(rcEnded.count(), 1);
+        QVERIFY(!rc.waitingReconnect());
+
+        // Sem reconexão no prazo: encerra com o fim no instante da queda.
+        feedAt(R"(11/13 19:30:00 [Client] Map: "start"
+                  11/13 19:30:00 OnGameStateChanged: GameInProgress (7))");
+        QCOMPARE(rcStarted.count(), 2);
+        clock = QDateTime(QDate(2026, 11, 13), QTime(19, 40, 0));
+        feedAt("11/13 19:40:00 [Client] Disconnecting from server: NETWORK_DISCONNECT_TIMEOUT");
+        QVERIFY(rc.waitingReconnect());
+        rc.checkReconnect(clock.addSecs(60));
+        QCOMPARE(rcEnded.count(), 1);
+        rc.checkReconnect(clock.addSecs(DeadlockEvents::ReconnectGraceSeconds + 10));
+        QCOMPARE(rcEnded.count(), 2);
+        QCOMPARE(rcEnded.last().first().toDouble(), DeadlockEvents::ReconnectGraceSeconds + 10.0);
+        QVERIFY(!rc.waitingReconnect());
     }
 
     void compressPlanDiscord()

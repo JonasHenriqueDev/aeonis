@@ -563,6 +563,7 @@ void DeadlockEvents::start()
                 const int last = tail.lastIndexOf('\n');
                 m_pending = tail.mid(last + 1); // linha ainda incompleta: termina no próximo poll
                 replay(QString::fromUtf8(tail.left(std::max(0, last))).split(QLatin1Char('\n')));
+                m_droppedAt = {}; // nada gravando para continuar: uma reconexão abre partida nova
                 m_live = true;
                 if (m_inMatch) {
                     Log::info(QStringLiteral("Deadlock: partida em andamento em %1.").arg(m_map));
@@ -601,6 +602,7 @@ void DeadlockEvents::poll()
             }
         }
     }
+    checkReconnect(QDateTime::currentDateTime());
     if (!m_live && !m_gaveUp && m_watchStart.secsTo(QDateTime::currentDateTime()) > LiveTimeoutSeconds) {
         m_gaveUp = true; // segue lendo: se o log aparecer depois, as partidas voltam a ser detectadas
         Log::warn(QStringLiteral("Deadlock: %1 não está sendo escrito (falta -condebug nas opções de inicialização).")
@@ -633,6 +635,24 @@ void DeadlockEvents::endMatch(double ago)
     }
 }
 
+void DeadlockEvents::checkReconnect(const QDateTime &now)
+{
+    if (m_droppedAt.isValid() && m_droppedAt.secsTo(now) > ReconnectGraceSeconds)
+        finishDrop(now);
+}
+
+void DeadlockEvents::finishDrop(const QDateTime &now)
+{
+    if (!m_droppedAt.isValid())
+        return;
+    const double ago = std::max(0.0, m_droppedAt.msecsTo(now) / 1000.0);
+    m_droppedAt = {};
+    if (!m_quiet) {
+        Log::info(QStringLiteral("Deadlock: sem reconexão; a partida termina na queda (%1 s atrás).").arg(ago, 0, 'f', 0));
+        emit matchEnded(ago);
+    }
+}
+
 void DeadlockEvents::processLine(const QString &line, const QDateTime &now)
 {
     static const QRegularExpression mapRe(QStringLiteral(R"re((?:Loading map|\[Client\] Map:) "([^"]*)")re"));
@@ -650,7 +670,15 @@ void DeadlockEvents::processLine(const QString &line, const QDateTime &now)
         return;
     }
     if (line.contains(QLatin1String("[Client] Disconnecting from server"))) {
-        endMatch(ago);
+        // Queda no meio do jogo (não foi o jogador que saiu): o jogo reconecta à mesma partida em seguida.
+        if (m_inMatch && m_state == QLatin1String("GameInProgress") && !line.contains(QLatin1String("DISCONNECT_BY_USER"))) {
+            m_inMatch = false;
+            m_droppedAt = now.addMSecs(-qint64(ago * 1000));
+            if (!m_quiet)
+                Log::info(QStringLiteral("Deadlock: conexão caiu em %1 (%2); aguardando a reconexão.").arg(m_map, line.section(QLatin1Char(':'), -1).trimmed()));
+        } else {
+            endMatch(ago);
+        }
         m_state.clear();
         return;
     }
@@ -664,12 +692,18 @@ void DeadlockEvents::processLine(const QString &line, const QDateTime &now)
     if (deadlockStartState(state)) {
         if (!m_inMatch && isMatchMap()) {
             m_inMatch = true;
-            if (!m_quiet) {
+            if (m_droppedAt.isValid()) { // reconectou: a mesma gravação continua
+                m_droppedAt = {};
+                if (!m_quiet)
+                    Log::info(QStringLiteral("Deadlock: reconectado à partida em %1; a gravação continua.").arg(m_map));
+            } else if (!m_quiet) {
                 Log::info(QStringLiteral("Deadlock: início da partida em %1.").arg(m_map));
                 emit matchStarted(ago);
             }
         }
     } else {
+        if (isMatchMap()) // seleção de herói etc. num mapa de partida: é outra partida, a interrompida acabou
+            finishDrop(now);
         endMatch(ago); // PostGame/End/Abandoned, ou voltou a um estado anterior ao jogo
     }
 }

@@ -61,7 +61,8 @@ public:
     /// Adianta o início da gravação longa para `secondsAgo` atrás (ex.: o 0:00 do relógio do LoL,
     /// descartando a tela de carregamento). Nunca recua.
     void moveRecordingStart(double secondsAgo);
-    ClipResult endRecording();
+    /// `until`: corta o fim (segmentos começados depois desse instante ficam fora). Inválido = até agora.
+    ClipResult endRecording(const QDateTime &until = {});
     /// Troca o id da sessão sem parar a captura (cada partida do Deadlock vira uma sessão no histórico).
     QString newSession();
     /// Fecha a parte atual da gravação longa num MP4 e segue gravando numa parte nova, sem perder quadros
@@ -97,7 +98,7 @@ private:
     void videoLoop();
     void janitorLoop();
     void stopThreads();
-    ClipResult finishRecording(const QString &dir);
+    ClipResult finishRecording(const QString &dir, const QDateTime &until = {});
     bool reopenEncoder(QString *error);
 
     mutable std::mutex m_mutex; // estado da sessão

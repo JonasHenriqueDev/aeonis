@@ -497,7 +497,7 @@ QString CaptureEngine::newSession()
     return m_sessionId;
 }
 
-ClipResult CaptureEngine::endRecording()
+ClipResult CaptureEngine::endRecording(const QDateTime &until)
 {
     QString dir;
     {
@@ -506,10 +506,10 @@ ClipResult CaptureEngine::endRecording()
             return {};
         dir = m_dir;
     }
-    return finishRecording(dir);
+    return finishRecording(dir, until);
 }
 
-ClipResult CaptureEngine::finishRecording(const QString &dir)
+ClipResult CaptureEngine::finishRecording(const QString &dir, const QDateTime &until)
 {
     std::vector<Segment> pick;
     QString game, outputDir;
@@ -518,9 +518,15 @@ ClipResult CaptureEngine::finishRecording(const QString &dir)
         if (!m_pinStart)
             return {};
         ++m_busy;
-        for (const Segment &s : listSegments(dir))
-            if (s.index >= *m_pinStart)
-                pick.push_back(s);
+        const auto segments = listSegments(dir);
+        for (size_t i = 0; i < segments.size(); ++i) {
+            if (segments[i].index < *m_pinStart)
+                continue;
+            // Um segmento começa quando o anterior termina (última escrita dele).
+            if (until.isValid() && !pick.empty() && QFileInfo(segments[i - 1].path).lastModified() >= until)
+                break;
+            pick.push_back(segments[i]);
+        }
         game = m_game;
         outputDir = m_pinOutputDir.isEmpty() ? m_settings.outputDir : m_pinOutputDir;
     }

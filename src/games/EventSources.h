@@ -125,6 +125,8 @@ class DeadlockEvents : public EventSource {
 public:
     /// Sem o log ficar ativo nesse tempo, desiste (sem -condebug o jogo não escreve o console.log).
     static constexpr int LiveTimeoutSeconds = 120;
+    /// Conexão caiu no meio da partida: espera esse tempo pela reconexão antes de encerrar a gravação.
+    static constexpr int ReconnectGraceSeconds = 180;
 
     /// `exePath`: ...\Deadlock\game\bin\win64\deadlock.exe (o log fica em ...\game\citadel\console.log).
     DeadlockEvents(Options options, const QString &exePath, QObject *parent = nullptr);
@@ -137,12 +139,17 @@ public:
     /// Lê o trecho final do log sem emitir nada, só para saber o mapa e o estado atuais.
     void replay(const QStringList &lines);
     bool inMatch() const { return m_inMatch; }
+    /// Partida interrompida por queda de conexão, aguardando a reconexão.
+    bool waitingReconnect() const { return m_droppedAt.isValid(); }
+    /// Sem reconexão até `now`: encerra a partida interrompida (chamado pelo poll; público para os testes).
+    void checkReconnect(const QDateTime &now);
     QString map() const { return m_map; }
 
 private:
     void poll();
     bool isMatchMap() const;
     void endMatch(double ago);
+    void finishDrop(const QDateTime &now);
 
     QTimer m_timer;
     QString m_path;
@@ -155,6 +162,7 @@ private:
     QString m_map;
     QString m_state;
     bool m_inMatch = false;
+    QDateTime m_droppedAt; // queda de conexão na partida (válido enquanto aguarda reconexão)
 };
 
 } // namespace aeonis

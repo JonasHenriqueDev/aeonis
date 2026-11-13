@@ -359,7 +359,7 @@ void App::onMatchStarted()
     });
 }
 
-void App::onMatchEnded()
+void App::onMatchEnded(double ago)
 {
     if (!m_activeGame)
         return;
@@ -371,7 +371,9 @@ void App::onMatchEnded()
     };
     m_highlighter->flush();
     const QDateTime requestedAt = QDateTime::currentDateTime();
-    enqueue([this] {
+    // Fim de fato `ago` s atrás (ex.: a conexão caiu e não voltou): o que veio depois fica fora do vídeo.
+    const QDateTime until = ago > 5 ? requestedAt.addMSecs(-qint64(ago * 1000)) : QDateTime();
+    enqueue([this, until] {
         Ended e;
         // Gravação que a partida não abriu (manual ou sessão inteira): não é encerrada aqui.
         if (!m_engine.running() || (m_engine.recording() && m_pin != Pin::Match))
@@ -379,7 +381,7 @@ void App::onMatchEnded()
         e.session = m_engine.sessionId();
         if (m_pin == Pin::Match) {
             e.start = m_engine.recordingSince();
-            e.result = m_engine.endRecording();
+            e.result = m_engine.endRecording(until);
         }
         m_pin = Pin::None;
         e.next = m_engine.newSession(); // saguão e próxima partida ficam fora desta
