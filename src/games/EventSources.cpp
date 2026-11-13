@@ -1,4 +1,5 @@
 #include "EventSources.h"
+#include "DeadlockMatch.h"
 #include "core/Log.h"
 #include "core/MediaCache.h"
 
@@ -565,6 +566,14 @@ void DeadlockEvents::start()
                 replay(QString::fromUtf8(tail.left(std::max(0, last))).split(QLatin1Char('\n')));
                 m_droppedAt = {}; // nada gravando para continuar: uma reconexão abre partida nova
                 m_live = true;
+                // A conta do jogador aparece no começo do log (login na Steam); o final pode não ter.
+                if (!m_accountId && f.seek(0)) {
+                    m_quiet = true;
+                    for (const QByteArray &raw : f.read(256 << 10).split('\n'))
+                        if (raw.contains("AuthStatus"))
+                            processLine(QString::fromUtf8(raw).trimmed());
+                    m_quiet = false;
+                }
                 if (m_inMatch) {
                     Log::info(QStringLiteral("Deadlock: partida em andamento em %1.").arg(m_map));
                     emit matchStarted(0);
@@ -657,8 +666,21 @@ void DeadlockEvents::processLine(const QString &line, const QDateTime &now)
 {
     static const QRegularExpression mapRe(QStringLiteral(R"re((?:Loading map|\[Client\] Map:) "([^"]*)")re"));
     static const QRegularExpression stateRe(QStringLiteral(R"re((?:ChangeGameState|OnGameStateChanged): (\w+) \(\d+\))re"));
+    static const QRegularExpression lobbyRe(QStringLiteral(R"re(Lobby \d+ for Match (\d+) created)re"));
+    static const QRegularExpression authRe(QStringLiteral(R"re(AuthStatus \(steamid:(7656\d{13})\))re"));
     const QDateTime at = deadlockLineTime(line, now);
     const double ago = at.isValid() ? std::clamp(at.msecsTo(now) / 1000.0, 0.0, 60.0) : 0.0;
+
+    if (const auto m = lobbyRe.match(line); m.hasMatch()) {
+        m_lobbyMatch = m.captured(1).toLongLong();
+        return;
+    }
+    if (!m_accountId) {
+        if (const auto m = authRe.match(line); m.hasMatch()) {
+            m_accountId = DeadlockMatch::accountId(m.captured(1).toULongLong());
+            return;
+        }
+    }
 
     if (const auto m = mapRe.match(line); m.hasMatch()) {
         const QString map = m.captured(1);
@@ -696,11 +718,19 @@ void DeadlockEvents::processLine(const QString &line, const QDateTime &now)
                 m_droppedAt = {};
                 if (!m_quiet)
                     Log::info(QStringLiteral("Deadlock: reconectado à partida em %1; a gravação continua.").arg(m_map));
-            } else if (!m_quiet) {
-                Log::info(QStringLiteral("Deadlock: início da partida em %1.").arg(m_map));
-                emit matchStarted(ago);
+            } else {
+                m_matchId = m_lobbyMatch;
+                m_lobbyMatch = 0; // não reaproveita o id numa partida seguinte sem a linha do lobby
+                m_clockZero = {};
+                if (!m_quiet) {
+                    Log::info(QStringLiteral("Deadlock: início da partida em %1 (id %2).").arg(m_map).arg(m_matchId));
+                    emit matchStarted(ago);
+                }
             }
         }
+        // O relógio da partida (tempos da deadlock-api) começa no GameInProgress.
+        if (m_inMatch && state == QLatin1String("GameInProgress") && !m_clockZero.isValid())
+            m_clockZero = at.isValid() ? at : now.addMSecs(-qint64(ago * 1000));
     } else {
         if (isMatchMap()) // seleção de herói etc. num mapa de partida: é outra partida, a interrompida acabou
             finishDrop(now);

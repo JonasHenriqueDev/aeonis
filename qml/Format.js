@@ -68,6 +68,10 @@ function eventIcon(l) {
     if (/drag/i.test(l)) return "dragon"
     if (/bar[ãa]o|atakhan/i.test(l)) return "baron"
     if (/arauto/i.test(l)) return "herald"
+    // Deadlock
+    if (/chefe do meio/i.test(l)) return "baron"
+    if (/guardi[ãa]o|walker/i.test(l)) return "tower"
+    if (/santu[áa]rio|patrono/i.test(l)) return "inhib"
     if (/vastilarva/i.test(l)) return "grubs"
     return "film"
 }

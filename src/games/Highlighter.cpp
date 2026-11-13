@@ -1,5 +1,10 @@
 #include "Highlighter.h"
+#include "core/Library.h"
 #include "core/Log.h"
+#include "core/Media.h"
+
+#include <QDir>
+#include <QFileInfo>
 
 #include <algorithm>
 #include <cmath>
@@ -78,6 +83,31 @@ QList<Highlighter::Span> Highlighter::spans(QList<std::pair<double, QString>> ev
         out.last().end = duration > 0 ? std::min(duration, t + post) : t + post;
     }
     return out;
+}
+
+std::pair<int, int> Highlighter::saveSpans(const QString &source, const QList<std::pair<double, QString>> &events,
+                                           int pre, int post, bool compress)
+{
+    const QList<Span> list = spans(events, pre, post, Media::duration(source));
+    const QFileInfo fi(source);
+    int saved = 0, n = 1;
+    for (const Span &span : list) {
+        if (span.end - span.start < 0.5)
+            continue;
+        QString output;
+        do {
+            output = QDir::toNativeSeparators(fi.absolutePath() + QLatin1Char('/') + fi.completeBaseName()
+                                              + QStringLiteral("_destaque%1.mp4").arg(n++));
+        } while (QFileInfo::exists(output));
+        const Media::RemuxResult r = Media::trim(source, output, span.start, span.end, compress);
+        if (!r.ok) {
+            Log::error(QStringLiteral("Falha ao criar clipe de %1: %2").arg(source, r.error));
+            continue;
+        }
+        Library::derived(source, output, r.startOffset, r.duration, QStringLiteral("highlight"), label(span.reasons));
+        ++saved;
+    }
+    return {saved, int(list.size())};
 }
 
 } // namespace aeonis

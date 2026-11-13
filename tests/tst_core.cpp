@@ -8,6 +8,7 @@
 #include "core/Media.h"
 #include "core/Paths.h"
 #include "core/Settings.h"
+#include "games/DeadlockMatch.h"
 #include "games/DeadlockSetup.h"
 #include "games/EventSources.h"
 #include "games/GameCatalog.h"
@@ -318,6 +319,83 @@ private slots:
         QCOMPARE(rcEnded.count(), 2);
         QCOMPARE(rcEnded.last().first().toDouble(), DeadlockEvents::ReconnectGraceSeconds + 10.0);
         QVERIFY(!rc.waitingReconnect());
+    }
+
+    void deadlockMatchApi()
+    {
+        QCOMPARE(DeadlockMatch::accountId(76561198000000123ULL), qint64(39734395));
+        // Metadata no formato de /v1/matches/{id}/metadata (reduzido): eu sou o slot 1 do time 0.
+        const QByteArray json = R"({"match_info":{"match_id":42,"winning_team":0,"match_mode":4,
+            "match_pauses":[{"game_time_s":100,"pause_duration_s":0},{"game_time_s":300,"pause_duration_s":20}],
+            "mid_boss":[{"team_killed":0,"team_claimed":0,"destroyed_time_s":400},{"team_claimed":1,"destroyed_time_s":900}],
+            "objectives":[{"destroyed_time_s":500,"team_objective_id":3,"team":1},
+                          {"destroyed_time_s":510,"team_objective_id":3,"team":0},
+                          {"destroyed_time_s":0,"team_objective_id":7,"team":1},
+                          {"destroyed_time_s":600,"team_objective_id":0,"team":1},
+                          {"destroyed_time_s":700,"team_objective_id":9,"team":1}],
+            "players":[
+              {"account_id":7,"player_slot":1,"team":0,"hero_id":85,"kills":3,"deaths":1,"assists":5,"level":20,"last_hits":99,
+               "death_details":[{"game_time_s":250,"killer_player_slot":8}]},
+              {"account_id":8,"player_slot":8,"team":1,"death_details":[{"game_time_s":200,"killer_player_slot":1},
+                                                                         {"game_time_s":320,"killer_player_slot":1}]},
+              {"account_id":9,"player_slot":9,"team":1,"death_details":[{"game_time_s":208,"killer_player_slot":1},
+                                                                         {"game_time_s":330,"killer_player_slot":2}]}]}})";
+        const QJsonObject root = QJsonDocument::fromJson(json).object();
+        QVERIFY(!DeadlockMatch::parse(root, 1234, {}).ok);
+        const DeadlockMatch::Parsed p = DeadlockMatch::parse(root, 7, {});
+        QVERIFY(p.ok);
+        QCOMPARE(p.heroId, 85);
+        QCOMPARE(p.info.value("kills").toInt(), 3);
+        QCOMPARE(p.info.value("result").toString(), QStringLiteral("Win"));
+        QCOMPARE(p.info.value("mode").toString(), QStringLiteral("Ranqueada"));
+        QStringList got;
+        for (const DeadlockMatch::Event &e : p.events)
+            got << QStringLiteral("%1 %2%3").arg(e.gameTime).arg(e.label, e.highlight ? QStringLiteral("*") : QString());
+        // Abates aos 200 e 208 (double kill), morte aos 250 (sem clipe: opção desligada), abate aos 320,
+        // chefe do meio que meu time pegou, guardião e patrono inimigos (o meu guardião, o núcleo e o 0 s ficam fora).
+        QCOMPARE(got, QStringList({"200 Abate*", "208 Abate*", "208 Double Kill*", "250 Morte", "320 Abate*",
+                                   "400 Chefe do meio", "500 Guardião", "700 Patrono"}));
+        EventOptions withDeaths;
+        withDeaths.deaths = true;
+        QVERIFY(DeadlockMatch::parse(root, 7, withDeaths).events.at(3).highlight);
+        // Relógio: 0:00 no GameInProgress; a pausa de 20 s aos 300 empurra o que vem depois.
+        const QDateTime zero(QDate(2026, 11, 13), QTime(18, 40, 51));
+        QCOMPARE(DeadlockMatch::wallTime(zero, 200, p.pauses), zero.addSecs(200));
+        QCOMPARE(DeadlockMatch::wallTime(zero, 320, p.pauses), zero.addSecs(340));
+
+        // O log dá o id da partida, a conta e o 0:00 do relógio.
+        DeadlockEvents dl([] { return EventOptions{}; }, {});
+        const QDateTime now(QDate(2026, 11, 13), QTime(18, 41, 0));
+        for (const char *line : {"11/13 18:17:44 [SteamNetSockets] AuthStatus (steamid:90297416925726737):  OK  (OK)",
+                                 "11/13 18:17:44 [SteamNetSockets] AuthStatus (steamid:76561198000000123):  Attempting  (Requesting cert)",
+                                 "11/13 18:39:26 Lobby 102166054893010264 for Match 136866150 created",
+                                 "11/13 18:39:27 [Client] Map: \"start\"",
+                                 "11/13 18:40:22 OnGameStateChanged: PreGameWait (6)",
+                                 "11/13 18:40:51 OnGameStateChanged: GameInProgress (7)"})
+            dl.processLine(QString::fromUtf8(line), now);
+        QCOMPARE(dl.matchId(), qint64(136866150));
+        QCOMPARE(dl.accountId(), qint64(39734395));
+        QCOMPARE(dl.clockZero(), zero);
+        // Partida seguinte sem a linha do lobby: não herda o id da anterior.
+        for (const char *line : {"11/13 19:25:31 OnGameStateChanged: PostGame (8)",
+                                 "11/13 19:40:00 [Client] Map: \"bots\"",
+                                 "11/13 19:40:10 OnGameStateChanged: GameInProgress (7)"})
+            dl.processLine(QString::fromUtf8(line), now);
+        QVERIFY(dl.inMatch());
+        QCOMPARE(dl.matchId(), qint64(0));
+
+        // Metadata real (opcional): AEONIS_DEADLOCK_SAMPLE=arquivo.json;account_id
+        const QStringList sample = qEnvironmentVariable("AEONIS_DEADLOCK_SAMPLE").split(QLatin1Char(';'));
+        if (sample.size() == 2) {
+            QFile f(sample[0]);
+            QVERIFY(f.open(QIODevice::ReadOnly));
+            const DeadlockMatch::Parsed real = DeadlockMatch::parse(QJsonDocument::fromJson(f.readAll()).object(), sample[1].toLongLong(), {});
+            QVERIFY(real.ok);
+            for (const DeadlockMatch::Event &e : real.events)
+                qWarning().noquote() << "DEADLOCK" << e.gameTime << e.label << e.highlight
+                                     << DeadlockMatch::wallTime(zero, e.gameTime, real.pauses).toString(QStringLiteral("HH:mm:ss"));
+            qWarning().noquote() << "DEADLOCK info" << QJsonDocument(real.info).toJson(QJsonDocument::Compact);
+        }
     }
 
     void compressPlanDiscord()

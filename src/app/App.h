@@ -27,6 +27,7 @@ namespace aeonis {
 class AutoUpdater;
 class UpdateSplash;
 class Backend;
+class DeadlockMatchFetcher;
 class EventSource;
 class GameWatcher;
 class Highlighter;
@@ -82,6 +83,8 @@ private:
     /// Deadlock: cada partida vira uma sessão própria e a gravação longa vai do início ao fim dela.
     void onMatchStarted();
     void onMatchEnded(double ago);
+    /// Deadlock: busca os eventos da partida gravada na sessão `session` (dados lidos do log agora).
+    void queueDeadlockEvents(const QString &session);
     void startDesktopBufferIfWanted();
     /// Gravação longa passou de CaptureEngine::PartSeconds: salva a parte e segue numa nova.
     void splitLongRecording();
@@ -98,6 +101,7 @@ private:
     CaptureEngine m_engine;
     QThreadPool m_ops; // 1 thread: operações da captura em ordem
     Highlighter *m_highlighter = nullptr;
+    DeadlockMatchFetcher *m_deadlockFetch = nullptr; // eventos da partida do Deadlock, depois do fim
     GameWatcher *m_watcher = nullptr;
     std::unique_ptr<Hotkeys> m_hotkeys;
     TrayIcon *m_tray = nullptr;

@@ -303,26 +303,7 @@ void Backend::clipsFromEvents(const QString &path, const QVariantList &events, b
     const Settings s = m_app->settings();
     const int pre = s.clipPreSeconds, post = s.clipPostSeconds;
     runAsync(this, [source, list, pre, post, compress] {
-        const QList<Highlighter::Span> spans = Highlighter::spans(list, pre, post, Media::duration(source));
-        const QFileInfo fi(source);
-        int saved = 0, n = 1;
-        for (const Highlighter::Span &span : spans) {
-            if (span.end - span.start < 0.5)
-                continue;
-            QString output;
-            do {
-                output = QDir::toNativeSeparators(fi.absolutePath() + QLatin1Char('/') + fi.completeBaseName()
-                                                  + QStringLiteral("_destaque%1.mp4").arg(n++));
-            } while (QFileInfo::exists(output));
-            const Media::RemuxResult r = Media::trim(source, output, span.start, span.end, compress);
-            if (!r.ok) {
-                Log::error(QStringLiteral("Falha ao criar clipe de %1: %2").arg(source, r.error));
-                continue;
-            }
-            Library::derived(source, output, r.startOffset, r.duration, QStringLiteral("highlight"), Highlighter::label(span.reasons));
-            ++saved;
-        }
-        return std::make_pair(saved, int(spans.size()));
+        return Highlighter::saveSpans(source, list, pre, post, compress);
     }, [this](std::pair<int, int> r) {
         emit eventClipsDone(r.first);
         if (r.first > 0)

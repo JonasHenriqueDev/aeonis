@@ -40,6 +40,10 @@ public:
     /// próximos como no destaque ao vivo: cabem no mesmo clipe enquanto as janelas se tocam e o grupo
     /// não passa de MaxExtendSeconds. `duration` > 0 limita o fim.
     static QList<Span> spans(QList<std::pair<double, QString>> events, int pre, int post, double duration = 0);
+    /// Corta os trechos de `spans` de `source` (ao lado dele, "_destaqueN") e registra cada clipe como da
+    /// mesma partida. Bloqueia (chame fora da thread da interface). Devolve (salvos, trechos).
+    static std::pair<int, int> saveSpans(const QString &source, const QList<std::pair<double, QString>> &events,
+                                         int pre, int post, bool compress);
 
 private:
     void fire();

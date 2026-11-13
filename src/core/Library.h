@@ -35,6 +35,8 @@ void sessionStarted(const QString &session, const QString &game, const QString &
 void sessionEnded(const QString &session);
 /// `ago`: o evento aconteceu há tantos segundos (chegou atrasado).
 void event(const QString &session, const QString &label, double ago = 0);
+/// Evento num instante conhecido (ex.: tempos da partida chegados depois dela).
+void eventAt(const QString &session, const QString &label, const QDateTime &at);
 void matchInfo(const QString &session, const QJsonObject &info);
 /// `requestedAt`: momento em que o clipe foi pedido (fim do vídeo). `start`: início conhecido
 /// (gravação longa); senão é deduzido de requestedAt − duração.

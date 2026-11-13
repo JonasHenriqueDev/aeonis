@@ -11,6 +11,7 @@
 #include "core/Log.h"
 #include "core/MediaCache.h"
 #include "core/Paths.h"
+#include "games/DeadlockMatch.h"
 #include "games/EventSources.h"
 #include "games/GameWatcher.h"
 #include "games/Highlighter.h"
@@ -46,6 +47,50 @@ App::App(bool minimized, QObject *parent) : QObject(parent), m_settings(Settings
     m_highlighter = new Highlighter([this] { return std::make_pair(m_settings.clipPreSeconds, m_settings.clipPostSeconds); },
                                     [this](int seconds, const QString &label) { saveClip(seconds, label, QStringLiteral("highlight")); },
                                     this);
+    m_deadlockFetch = new DeadlockMatchFetcher([this] { return EventOptions{m_settings.clipDeaths, m_settings.clipAssists}; }, this);
+    connect(m_deadlockFetch, &DeadlockMatchFetcher::ready, this, [this](const DeadlockMatchFetcher::Result &r) {
+        const QString session = r.job.session;
+        for (const auto &[at, e] : r.events)
+            Library::eventAt(session, e.label, at);
+        Library::matchInfo(session, r.info);
+        emit libraryChanged();
+        // Clipes dos destaques, cortados do vídeo da partida (sem re-encode), como os automáticos dos outros jogos.
+        if (!m_settings.autoHighlights || m_settings.mode == CaptureMode::SomentePartida)
+            return;
+        QList<std::pair<QDateTime, QString>> highlights;
+        for (const auto &[at, e] : r.events)
+            if (e.highlight)
+                highlights.append({at, e.label});
+        if (highlights.isEmpty())
+            return;
+        const int pre = m_settings.clipPreSeconds, post = m_settings.clipPostSeconds;
+        runAsync(this, [session, highlights, pre, post] {
+            // Vídeo(s) da partida: a gravação longa pode ter sido dividida em partes; cada evento vai para a sua.
+            std::pair<int, int> total{0, 0};
+            for (const LibEntry &c : Library::load()) {
+                if (c.t != QLatin1String("clip") || c.s != session || c.kind != QLatin1String("full") || !c.start.isValid()
+                    || !c.duration || !QFileInfo::exists(c.path))
+                    continue;
+                QList<std::pair<double, QString>> list;
+                for (const auto &[at, label] : highlights)
+                    if (const double t = c.start.msecsTo(at) / 1000.0; t >= 0 && t <= *c.duration)
+                        list.append({t, label});
+                if (list.isEmpty())
+                    continue;
+                const auto saved = Highlighter::saveSpans(c.path, list, pre, post, false);
+                total.first += saved.first;
+                total.second += saved.second;
+            }
+            return total;
+        }, [this](std::pair<int, int> saved) {
+            if (saved.first > 0) {
+                notify(QStringLiteral("Deadlock: destaques da partida"),
+                       saved.first == 1 ? QStringLiteral("1 clipe criado.") : QStringLiteral("%1 clipes criados.").arg(saved.first));
+                enforceQuota();
+                emit libraryChanged();
+            }
+        });
+    });
     m_watcher = new GameWatcher([this] {
         QList<GameDef> games = GameCatalog::all(m_settings.customGames);
         games.removeIf([this](const GameDef &g) { return !m_settings.captures(g.name); }); // filtro de jogos
@@ -293,8 +338,24 @@ void App::onGameStarted(const GameDef &game, HMONITOR monitor, const QString &ex
         start();
 }
 
+void App::queueDeadlockEvents(const QString &session)
+{
+    auto *dl = qobject_cast<DeadlockEvents *>(m_events);
+    if (!dl)
+        return;
+    DeadlockMatchFetcher::Job job;
+    job.matchId = dl->matchId();
+    job.accountId = dl->accountId();
+    job.clockZero = dl->clockZero();
+    job.session = session;
+    m_deadlockFetch->add(job);
+}
+
 void App::onGameStopped(const GameDef &)
 {
+    // Jogo fechado no meio da partida: a gravação é salva no encerramento; os eventos vêm depois.
+    if (auto *dl = qobject_cast<DeadlockEvents *>(m_events); dl && (dl->inMatch() || dl->waitingReconnect()))
+        queueDeadlockEvents(m_engine.sessionId());
     if (m_events) {
         m_events->deleteLater();
         m_events = nullptr;
@@ -373,6 +434,14 @@ void App::onMatchEnded(double ago)
     const QDateTime requestedAt = QDateTime::currentDateTime();
     // Fim de fato `ago` s atrás (ex.: a conexão caiu e não voltou): o que veio depois fica fora do vídeo.
     const QDateTime until = ago > 5 ? requestedAt.addMSecs(-qint64(ago * 1000)) : QDateTime();
+    // Dados da partida lidos já: o jogo pode fechar (e a fonte sumir) antes da fila chegar ao fim.
+    std::optional<DeadlockMatchFetcher::Job> job;
+    if (auto *dl = qobject_cast<DeadlockEvents *>(m_events)) {
+        job.emplace();
+        job->matchId = dl->matchId();
+        job->accountId = dl->accountId();
+        job->clockZero = dl->clockZero();
+    }
     enqueue([this, until] {
         Ended e;
         // Gravação que a partida não abriu (manual ou sessão inteira): não é encerrada aqui.
@@ -386,7 +455,7 @@ void App::onMatchEnded(double ago)
         m_pin = Pin::None;
         e.next = m_engine.newSession(); // saguão e próxima partida ficam fora desta
         return e;
-    }, [this, game, exe, requestedAt](Ended e) {
+    }, [this, game, exe, requestedAt, job](Ended e) {
         if (e.next.isEmpty())
             return;
         if (e.result) {
@@ -397,6 +466,11 @@ void App::onMatchEnded(double ago)
         }
         if (e.result || m_lastClipSession == e.session)
             m_lastMatchSession = e.session;
+        if (e.result && job) {
+            DeadlockMatchFetcher::Job j = *job;
+            j.session = e.session;
+            m_deadlockFetch->add(j);
+        }
         Library::sessionEnded(e.session);
         Library::sessionStarted(e.next, game, exe);
         emit libraryChanged();

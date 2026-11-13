@@ -141,6 +141,11 @@ public:
     bool inMatch() const { return m_inMatch; }
     /// Partida interrompida por queda de conexão, aguardando a reconexão.
     bool waitingReconnect() const { return m_droppedAt.isValid(); }
+    /// Partida atual (ou a última): id do matchmaking, conta do jogador (account id da Steam) e o instante
+    /// do 0:00 do relógio (GameInProgress), para buscar e alinhar os eventos depois (DeadlockMatchFetcher).
+    qint64 matchId() const { return m_matchId; }
+    qint64 accountId() const { return m_accountId; }
+    QDateTime clockZero() const { return m_clockZero; }
     /// Sem reconexão até `now`: encerra a partida interrompida (chamado pelo poll; público para os testes).
     void checkReconnect(const QDateTime &now);
     QString map() const { return m_map; }
@@ -163,6 +168,10 @@ private:
     QString m_state;
     bool m_inMatch = false;
     QDateTime m_droppedAt; // queda de conexão na partida (válido enquanto aguarda reconexão)
+    qint64 m_lobbyMatch = 0; // último "Lobby ... for Match N created"
+    qint64 m_matchId = 0;
+    qint64 m_accountId = 0;
+    QDateTime m_clockZero;
 };
 
 } // namespace aeonis

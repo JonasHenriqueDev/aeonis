@@ -82,7 +82,9 @@ QString gameIconPath(const QString &game)
 
 QString championIconPath(const QString &championId)
 {
-    return QDir::toNativeSeparators(Paths::icons() + QStringLiteral("/lol-") + Clips::sanitize(championId) + QStringLiteral(".png"));
+    // "deadlock-85" (herói do Deadlock) já traz o prefixo; os do LoL ganham "lol-".
+    const QString prefix = championId.startsWith(QLatin1String("deadlock-")) ? QString() : QStringLiteral("lol-");
+    return QDir::toNativeSeparators(Paths::icons() + QLatin1Char('/') + prefix + Clips::sanitize(championId) + QStringLiteral(".png"));
 }
 
 void saveGameIcon(const QString &game, const QString &exe)
