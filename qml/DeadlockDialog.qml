@@ -11,6 +11,7 @@ Popup {
     parent: Overlay.overlay
     anchors.centerIn: parent
     width: 580
+    contentWidth: width - leftPadding - rightPadding // fixo: a largura não depende do conteúdo (sem binding loop)
     height: Math.min(implicitHeight, parent.height - 40) // janela baixa: rola
     modal: true
     padding: 22
@@ -52,10 +53,10 @@ Popup {
 
     contentItem: ScrollView {
         clip: true
-        contentWidth: availableWidth
+        contentWidth: d.contentWidth
 
     ColumnLayout {
-        width: d.availableWidth
+        width: d.contentWidth
         spacing: 16
 
         RowLayout {

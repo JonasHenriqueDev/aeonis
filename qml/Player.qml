@@ -167,6 +167,14 @@ FocusScope {
         zoomToTrim()
     }
 
+    // Volume em passos de 5% (roda do mouse e setas ↑/↓); subir tira o mudo.
+    function changeVolume(steps) {
+        if (steps === 0) return
+        if (steps > 0) muteButton.muted = false
+        volumeSlider.value = Math.max(0, Math.min(1, Math.round((volumeSlider.value + steps * 0.05) * 100) / 100))
+        volumeHint.show()
+    }
+
     Keys.onPressed: event => {
         wake()
         if (event.key === Qt.Key_Escape) { if (fullscreen) win.setPlayerFullscreen(false); else if (trim) trim = null; else if (!embedded) win.current = null }
@@ -174,6 +182,8 @@ FocusScope {
         else if (event.key === Qt.Key_Space) p.togglePlay()
         else if (event.key === Qt.Key_Right) seek(position + 5)
         else if (event.key === Qt.Key_Left) seek(position - 5)
+        else if (event.key === Qt.Key_Up) changeVolume(1)
+        else if (event.key === Qt.Key_Down) changeVolume(-1)
         else if (event.key === Qt.Key_Period) { player.pause(); seek(position + 1 / 60) }
         else if (event.key === Qt.Key_Comma) { player.pause(); seek(position - 1 / 60) }
         else if (event.key === Qt.Key_I && trim) setMarkAt("a", position)
@@ -363,18 +373,15 @@ FocusScope {
                         hoverEnabled: p.fullscreen
                         cursorShape: p.controlsVisible ? Qt.ArrowCursor : Qt.BlankCursor
                         onPositionChanged: p.wake()
+                        onPressed: p.forceActiveFocus() // as setas voltam para o player
                         onDoubleClicked: win.setPlayerFullscreen(!p.fullscreen)
                         // Roda do mouse sobre o vídeo: volume em passos de 5% (subir tira o mudo).
                         onWheel: wheel => {
                             p.wake()
-                            const steps = wheel.angleDelta.y / 120
-                            if (steps === 0) return
-                            if (steps > 0) muteButton.muted = false
-                            volumeSlider.value = Math.max(0, Math.min(1, Math.round((volumeSlider.value + steps * 0.05) * 100) / 100))
-                            volumeHint.show()
+                            p.changeVolume(wheel.angleDelta.y / 120)
                         }
                     }
-                    // Aviso do volume ao girar a roda, some sozinho.
+                    // Aviso do volume (roda do mouse ou setas ↑/↓), some sozinho.
                     Rectangle {
                         id: volumeHint
                         function show() { opacity = 1; volumeHintTimer.restart() }
@@ -736,7 +743,8 @@ FocusScope {
                             iconName: muted ? "mute" : "volume"
                             onClicked: muted = !muted
                         }
-                        Slider { id: volumeSlider; from: 0; to: 1; value: 0.8; Layout.preferredWidth: 120 }
+                        // Sem foco: as setas continuam com o player (←/→ vídeo, ↑/↓ volume) depois de arrastar.
+                        Slider { id: volumeSlider; from: 0; to: 1; value: 0.8; Layout.preferredWidth: 120; focusPolicy: Qt.NoFocus }
                         AButton {
                             flat: true
                             iconName: p.fullscreen ? "shrink" : "expand"
