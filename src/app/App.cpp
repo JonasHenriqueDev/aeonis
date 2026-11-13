@@ -262,7 +262,8 @@ void App::onGameStarted(const GameDef &game, HMONITOR monitor, const QString &ex
                     connect(m_events, &EventSource::matchDetectionUnavailable, this, [this] {
                         notify(QStringLiteral("Deadlock: partidas não detectadas"),
                                QStringLiteral("Adicione -condebug nas opções de inicialização do Deadlock na Steam para "
-                                              "gravar só as partidas. Até lá, a sessão inteira é gravada."),
+                                              "gravar só as partidas (passo a passo em Aeonis › Sobre › Deadlock). "
+                                              "Até lá, a sessão inteira é gravada."),
                                QSystemTrayIcon::Warning);
                         if (m_settings.mode != CaptureMode::Destaques)
                             enqueue([this] {
@@ -614,6 +615,13 @@ void App::applySettings(const Settings &updated)
     startDesktopBufferIfWanted();
     updateUi();
     emit libraryChanged();
+}
+
+void App::setExtra(const QString &key, const QJsonValue &value)
+{
+    m_settings.extra.insert(key, value);
+    if (!m_settings.save())
+        notify(QStringLiteral("Erro ao salvar configurações"), Paths::settingsFile(), QSystemTrayIcon::Critical);
 }
 
 void App::showWindow(const QString &page) { m_window->show(page); }

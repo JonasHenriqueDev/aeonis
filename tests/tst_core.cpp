@@ -8,6 +8,7 @@
 #include "core/Media.h"
 #include "core/Paths.h"
 #include "core/Settings.h"
+#include "games/DeadlockSetup.h"
 #include "games/EventSources.h"
 #include "games/GameCatalog.h"
 #include "games/Highlighter.h"
@@ -267,6 +268,32 @@ private slots:
         QCOMPARE(late.map(), QStringLiteral("dl_streets"));
         QCOMPARE(lateStarted.count(), 0);
         QVERIFY(late.controlsRecording());
+    }
+
+    void deadlockSetup()
+    {
+        using namespace DeadlockSetup;
+        // Trecho real do localconfig.vdf: o app aparece em mais de uma seção.
+        const QString vdf = QStringLiteral(
+            "\"UserLocalConfigStore\"\n{\n\t\"apptickets\"\n\t{\n\t\t\"1422450\"\t\t\"abc\"\n\t}\n"
+            "\t\"Software\"\n\t{\n\t\t\"Valve\"\n\t\t{\n\t\t\t\"Steam\"\n\t\t\t{\n\t\t\t\t\"apps\"\n\t\t\t\t{\n"
+            "\t\t\t\t\t\"1422450\"\n\t\t\t\t\t{\n\t\t\t\t\t\t\"LastPlayed\"\t\t\"1794427107\"\n"
+            "\t\t\t\t\t\t\"cloud\"\n\t\t\t\t\t\t{\n\t\t\t\t\t\t\t\"last_sync_state\"\t\t\"synchronized\"\n\t\t\t\t\t\t}\n"
+            "\t\t\t\t\t\t\"LaunchOptions\"\t\t\"-console -vulkan -dev\"\n\t\t\t\t\t}\n"
+            "\t\t\t\t\t\"730\"\n\t\t\t\t\t{\n\t\t\t\t\t\t\"LaunchOptions\"\t\t\"-condebug\"\n\t\t\t\t\t}\n"
+            "\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n}\n");
+        const AppConfig c = appConfig(vdf);
+        QVERIFY(c.found);
+        QCOMPARE(c.launchOptions, QStringLiteral("-console -vulkan -dev"));
+        QCOMPARE(c.lastPlayed, 1794427107LL);
+        QVERIFY(!hasCondebug(c.launchOptions)); // o -condebug do CS2 (730) não conta
+        QVERIFY(hasCondebug(QStringLiteral("-console  -CONDEBUG -dev")));
+        QVERIFY(!hasCondebug(QStringLiteral("-condebugx")));
+        QVERIFY(!appConfig(QStringLiteral("\"730\" { \"LaunchOptions\" \"x\" }")).found);
+        // Bloco mais recente sem LaunchOptions não esconde o que tem as opções.
+        const AppConfig two = appConfig(QStringLiteral(
+            "\"1422450\" { \"LastPlayed\" \"5\" \"LaunchOptions\" \"-condebug\" } \"1422450\" { \"LastPlayed\" \"9\" }"));
+        QVERIFY(hasCondebug(two.launchOptions));
     }
 
     void cs2Events()

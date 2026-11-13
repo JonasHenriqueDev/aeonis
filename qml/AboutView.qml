@@ -121,6 +121,26 @@ Item {
             }
 
             Card {
+                Text { text: "Deadlock"; color: Theme.text; font.pixelSize: 16; font.weight: Font.DemiBold }
+                Text {
+                    Layout.fillWidth: true
+                    wrapMode: Text.Wrap
+                    color: Theme.muted
+                    font.pixelSize: 13
+                    text: (App.deadlock || {}).condebug
+                          ? "-condebug está ativo: cada partida do Deadlock é gravada do início ao fim."
+                          : "Para gravar cada partida do início ao fim (e não a sessão inteira), o Deadlock precisa da opção -condebug na Steam."
+                }
+                RowLayout {
+                    AButton {
+                        text: (App.deadlock || {}).condebug ? "Ver o passo a passo" : "Como ativar"
+                        iconName: "info"
+                        onClicked: win.openDeadlockTip()
+                    }
+                }
+            }
+
+            Card {
                 Text { text: "Projeto"; color: Theme.text; font.pixelSize: 16; font.weight: Font.DemiBold }
                 Text {
                     Layout.fillWidth: true

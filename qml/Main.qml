@@ -55,6 +55,7 @@ ApplicationWindow {
 
     function go(v) {
         if (v === "player") { debugPlayer = true; openDebugPlayer(); return }
+        if (v === "deadlock") { openDeadlockTip(); return }
         if (v.startsWith("match:")) {
             pendingMatch = v.slice(6)
             openPendingMatch()
@@ -143,6 +144,44 @@ ApplicationWindow {
             Layout.fillHeight: true
         }
 
+        ColumnLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: 0
+
+        // Aviso do Deadlock: instalado e sem -condebug, só a sessão inteira pode ser gravada.
+        Rectangle {
+            readonly property var dl: App.deadlock || ({})
+            visible: !win.current && !win.playerFullscreen && dl.installed === true
+                     && dl.condebug !== true && dl.dismissed !== true
+            Layout.fillWidth: true
+            Layout.leftMargin: 20
+            Layout.rightMargin: 20
+            Layout.topMargin: 14
+            implicitHeight: tipRow.implicitHeight + 20
+            radius: 10
+            color: Theme.card
+            border.color: Qt.darker(Theme.multi, 1.6)
+            RowLayout {
+                id: tipRow
+                anchors.fill: parent
+                anchors.margins: 10
+                anchors.leftMargin: 14
+                spacing: 12
+                Icon { name: "info"; size: 18; color: Theme.multi }
+                Text {
+                    Layout.fillWidth: true
+                    wrapMode: Text.Wrap
+                    textFormat: Text.StyledText
+                    color: Theme.text
+                    font.pixelSize: 13
+                    text: "<b>Deadlock:</b> para gravar cada partida do início ao fim (e não a sessão inteira), "
+                        + "adicione <b>-condebug</b> nas opções de inicialização do jogo na Steam."
+                }
+                AButton { primary: true; text: "Como ativar"; onClicked: win.openDeadlockTip() }
+            }
+        }
+
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -159,7 +198,10 @@ ApplicationWindow {
                 sourceComponent: Component { Player { media: win.current } }
             }
         }
+        }
     }
+
+    DeadlockDialog { id: deadlockDialog }
 
     Component { id: sessionsPage; SessionsView {} }
     Component { id: clipsPage; ClipsView {} }
@@ -213,10 +255,11 @@ ApplicationWindow {
         return true
     }
     Component.onCompleted: {
-        if (InitialPage.startsWith("match:")) go(InitialPage)
+        if (InitialPage.startsWith("match:") || InitialPage === "deadlock") go(InitialPage)
         else openDebugPlayer()
     }
     function toastsShow(text, kind) { toasts.show(text, kind) }
+    function openDeadlockTip() { deadlockDialog.open() }
     function confirmDelete(c) {
         deleteDialog.target = c
         deleteDialog.open()

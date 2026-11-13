@@ -9,6 +9,7 @@
 #include "core/Log.h"
 #include "core/Media.h"
 #include "core/MediaCache.h"
+#include "games/DeadlockSetup.h"
 #include "games/GameCatalog.h"
 #include "games/Highlighter.h"
 #include "share/YouTube.h"
@@ -64,6 +65,7 @@ void Backend::setActive(bool active)
     m_active = active;
     if (active) {
         refresh();
+        checkDeadlock();
         emit settingsChanged();
     } else {
         ++m_thumbGeneration; // a biblioteca fica em memória: a janela abre com ela já pronta
@@ -333,10 +335,30 @@ void Backend::uploadToYouTube(const QString &path, const QVariantMap &video)
     m_app->youtube()->upload(v, meta);
 }
 
-void Backend::copyText(const QString &text)
+void Backend::copyText(const QString &text, const QString &message)
 {
     QGuiApplication::clipboard()->setText(text);
-    emit toast(QStringLiteral("Link copiado."), QStringLiteral("info"));
+    emit toast(message.isEmpty() ? QStringLiteral("Link copiado.") : message, QStringLiteral("info"));
+}
+
+void Backend::checkDeadlock()
+{
+    runAsync(this, [] { return DeadlockSetup::check(); }, [this](DeadlockSetup::State s) {
+        QVariantMap m;
+        m.insert(QStringLiteral("installed"), s.installed);
+        m.insert(QStringLiteral("known"), s.known);
+        m.insert(QStringLiteral("condebug"), s.condebug);
+        m.insert(QStringLiteral("dismissed"), m_app->settings().extra.value(QStringLiteral("DeadlockTipDismissed")).toBool());
+        m_deadlock = m;
+        emit deadlockChanged();
+    });
+}
+
+void Backend::dismissDeadlockTip()
+{
+    m_app->setExtra(QStringLiteral("DeadlockTipDismissed"), true);
+    m_deadlock.insert(QStringLiteral("dismissed"), true);
+    emit deadlockChanged();
 }
 
 void Backend::openYouTube(const QString &url)

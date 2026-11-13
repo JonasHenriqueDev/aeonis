@@ -10,6 +10,7 @@
 #include "games/GameCatalog.h"
 
 #include <QDateTime>
+#include <QJsonValue>
 #include <QObject>
 #include <QSystemTrayIcon>
 #include <QThreadPool>
@@ -43,6 +44,8 @@ public:
     const Settings &settings() const { return m_settings; }
     /// Salva, aplica (atalhos, inicialização, limite) e avisa a interface.
     void applySettings(const Settings &updated);
+    /// Grava uma chave avulsa em `extra` (preferências da interface) sem reaplicar as configurações.
+    void setExtra(const QString &key, const QJsonValue &value);
     QVariantMap status() const;
     AutoUpdater *updater() const { return m_updater; }
     YouTube *youtube() const { return m_youtube; }
