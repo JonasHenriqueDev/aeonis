@@ -3,11 +3,13 @@
 // tempo sem acesso) e copia o link da página dele, que traz as tags og:video: o Discord e o WhatsApp
 // mostram o vídeo na conversa. O qu.ax aceita até 256 MB: acima de 250 MB o vídeo é comprimido antes
 // (Media::compressTo, como o "Comprimir" do corte, mirando menos de 240 MB) e o temporário é apagado depois
-// do envio. Os links ficam em links.json e são reaproveitados enquanto o arquivo não mudar.
+// do envio. Os links ficam em links.json e são reaproveitados enquanto o arquivo não mudar; um vídeo já
+// enviado alguma vez (mesmo movido ou renomeado) é achado pela impressão digital do conteúdo.
 // Hosts descartados: Streamable (sem envio oficial; o endpoint não documentado exige usuário e senha) e
 // catbox.moe (responde HEAD com Content-Length: 0 e o Discord não gera o preview).
 
 #include <QDateTime>
+#include <QHash>
 #include <QNetworkAccessManager>
 #include <QObject>
 #include <QPointer>
@@ -15,6 +17,7 @@
 
 #include <atomic>
 #include <memory>
+#include <utility>
 
 class QNetworkReply;
 
@@ -40,7 +43,8 @@ public:
     double progress() const { return m_progress; }
     QVariantMap links() const { return m_links; }
 
-    /// Link ainda válido deste arquivo (mesmo tamanho e data); vazio se precisa enviar.
+    /// Link de um envio anterior deste vídeo: pelo caminho (mesmo tamanho e data) ou, se não houver, pela
+    /// impressão digital do conteúdo. Vazio se precisa enviar.
     Q_INVOKABLE QString linkFor(const QString &path) const;
     /// Cancela o envio (e a compressão em andamento).
     Q_INVOKABLE void cancel();
@@ -54,6 +58,8 @@ public:
     static QString parseResponse(const QByteArray &body);
     /// Entrada de links.json ainda vale para um arquivo com esse tamanho e data? (links antigos do catbox não)
     static bool entryValid(const QVariantMap &entry, qint64 size, const QDateTime &modified);
+    /// SHA-1 (hex) do tamanho + primeiro e último MB do arquivo; vazio se não abrir.
+    static QByteArray fingerprint(const QString &path);
 
 signals:
     void changed();
@@ -66,6 +72,7 @@ private:
     void finish(bool ok, const QString &url, const QString &message);
     void saveLinks() const;
     static QString key(const QString &path);
+    QByteArray cachedFingerprint(const QString &path) const;
 
     QNetworkAccessManager m_net;
     QPointer<QNetworkReply> m_reply;
@@ -75,7 +82,8 @@ private:
     quint64 m_job = 0;   // muda a cada envio e cancelamento: descarta compressões antigas
     std::shared_ptr<std::atomic<bool>> m_cancelCompress; // da compressão em andamento
     double m_progress = 0;
-    QVariantMap m_links; // caminho normalizado -> { url, size, modified, at, compressed }
+    QVariantMap m_links; // caminho normalizado -> { url, size, modified, fp, at, compressed }
+    mutable QHash<QString, std::pair<QString, QByteArray>> m_fpCache; // caminho -> (tamanho+data, impressão)
 };
 
 } // namespace aeonis

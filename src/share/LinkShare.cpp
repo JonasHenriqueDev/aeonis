@@ -4,6 +4,7 @@
 #include "core/Media.h"
 #include "core/Paths.h"
 
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -63,13 +64,61 @@ bool LinkShare::entryValid(const QVariantMap &entry, qint64 size, const QDateTim
         && entry.value(QStringLiteral("modified")).toString() == stamp(modified);
 }
 
+QByteArray LinkShare::fingerprint(const QString &path)
+{
+    constexpr qint64 Chunk = 1024 * 1024;
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly))
+        return {};
+    const qint64 size = f.size();
+    QCryptographicHash hash(QCryptographicHash::Sha1);
+    hash.addData(QByteArray::number(size));
+    hash.addData(f.read(Chunk));
+    if (size > Chunk && f.seek(std::max(Chunk, size - Chunk)))
+        hash.addData(f.read(Chunk));
+    return hash.result().toHex();
+}
+
+QByteArray LinkShare::cachedFingerprint(const QString &path) const
+{
+    // linkFor roda em bindings do QML: só relê o arquivo se ele mudou.
+    const QFileInfo fi(path);
+    const QString version = QString::number(fi.size()) + QLatin1Char('|') + stamp(fi.lastModified());
+    auto it = m_fpCache.find(key(path));
+    if (it != m_fpCache.end() && it->first == version)
+        return it->second;
+    const QByteArray fp = fingerprint(path);
+    if (m_fpCache.size() > 256)
+        m_fpCache.clear();
+    m_fpCache.insert(key(path), {version, fp});
+    return fp;
+}
+
 QString LinkShare::linkFor(const QString &path) const
 {
     const QFileInfo fi(path);
     if (!fi.exists())
         return {};
     const QVariantMap entry = m_links.value(key(path)).toMap();
-    return entryValid(entry, fi.size(), fi.lastModified()) ? entry.value(QStringLiteral("url")).toString() : QString();
+    if (entryValid(entry, fi.size(), fi.lastModified()))
+        return entry.value(QStringLiteral("url")).toString();
+    // Enviado antes com outro caminho ou outra data (movido, renomeado, copiado): procura pelo conteúdo.
+    bool any = false;
+    for (auto it = m_links.cbegin(); it != m_links.cend() && !any; ++it)
+        any = it->toMap().value(QStringLiteral("size")).toLongLong() == fi.size();
+    if (!any)
+        return {};
+    const QByteArray fp = cachedFingerprint(path);
+    if (fp.isEmpty())
+        return {};
+    for (auto it = m_links.cbegin(); it != m_links.cend(); ++it) {
+        const QVariantMap e = it->toMap();
+        const QString url = e.value(QStringLiteral("url")).toString();
+        if (e.value(QStringLiteral("size")).toLongLong() == fi.size() && QUrl(url).host() == QLatin1String(Host)
+            && e.value(QStringLiteral("fp")).toByteArray() == fp)
+            return url;
+    }
+    return {};
 }
 
 QString LinkShare::parseResponse(const QByteArray &body)
@@ -99,6 +148,8 @@ void LinkShare::saveLinks() const
 void LinkShare::share(const QString &path)
 {
     if (busy()) {
+        if (key(path) == key(m_path))
+            return; // clique repetido no vídeo que já está sendo enviado
         emit finished(false, path, {}, QStringLiteral("Espere o envio atual terminar."), true); // sem aviso na bandeja
         return;
     }
@@ -253,6 +304,7 @@ void LinkShare::finish(bool ok, const QString &url, const QString &message)
         m_links.insert(key(path), QVariantMap{{QStringLiteral("url"), url},
                                               {QStringLiteral("size"), fi.size()},
                                               {QStringLiteral("modified"), stamp(fi.lastModified())},
+                                              {QStringLiteral("fp"), QString::fromLatin1(cachedFingerprint(path))},
                                               {QStringLiteral("compressed"), compressed},
                                               {QStringLiteral("at"), QDateTime::currentDateTime().toString(Qt::ISODate)}});
         saveLinks();

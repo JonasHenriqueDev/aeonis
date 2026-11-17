@@ -315,12 +315,19 @@ FocusScope {
                 iconName: sent && !mine ? "check" : "link"
                 iconColor: sent || mine ? Theme.accent : Theme.text
                 ToolTip.visible: hovered
-                ToolTip.text: mine ? "Clique para cancelar o envio"
+                ToolTip.text: mine ? "Enviando este vídeo; o link é copiado quando terminar"
                     : ls.busy ? "Espere o envio do outro vídeo terminar"
                     : sent ? "Copia de novo o link deste vídeo"
                     : p.media && p.media.size > 250e6 ? "Comprime o vídeo para menos de 250 MB, envia ao qu.ax e copia o link"
                     : "Envia o vídeo ao qu.ax e copia o link para mandar no Discord ou WhatsApp"
-                onClicked: mine ? ls.cancel() : App.shareLink(p.media.path)
+                onClicked: if (!mine) App.shareLink(p.media.path) // clicar de novo durante o envio não faz nada
+            }
+            AButton {
+                visible: App.linkShare.busy && App.linkShare.busyPath.toLowerCase().replace(/\//g, "\\") === (p.media ? p.media.path.toLowerCase().replace(/\//g, "\\") : "")
+                iconName: "close"
+                ToolTip.visible: hovered
+                ToolTip.text: "Cancelar o envio"
+                onClicked: App.linkShare.cancel()
             }
             AButton {
                 iconName: "folder"

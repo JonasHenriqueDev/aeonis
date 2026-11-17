@@ -736,6 +736,23 @@ private slots:
         QVariantMap old = entry; // links do catbox (1.5.20/1.5.21) não geram preview no Discord: envia de novo
         old.insert(QStringLiteral("url"), QStringLiteral("https://files.catbox.moe/a.mp4"));
         QVERIFY(!LinkShare::entryValid(old, 1234, t));
+        // Impressão digital: igual numa cópia em outro caminho, diferente se o fim do arquivo mudar.
+        QTemporaryDir fpDir;
+        QByteArray content(3 * 1024 * 1024, 'a');
+        auto write = [&](const QString &name, const QByteArray &data) {
+            QFile f(fpDir.filePath(name));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write(data);
+        };
+        write(QStringLiteral("a.mp4"), content);
+        write(QStringLiteral("copia.mp4"), content);
+        content[content.size() - 1] = 'b';
+        write(QStringLiteral("outro.mp4"), content);
+        const QByteArray fpA = LinkShare::fingerprint(fpDir.filePath(QStringLiteral("a.mp4")));
+        QCOMPARE(fpA.size(), 40);
+        QCOMPARE(LinkShare::fingerprint(fpDir.filePath(QStringLiteral("copia.mp4"))), fpA);
+        QVERIFY(LinkShare::fingerprint(fpDir.filePath(QStringLiteral("outro.mp4"))) != fpA);
+        QVERIFY(LinkShare::fingerprint(fpDir.filePath(QStringLiteral("nao-existe.mp4"))).isEmpty());
         // Compressão para o link: a meta de 240 MB cabe num vídeo de 15 min em 1080p60.
         Media::SourceInfo src;
         src.width = 1920; src.height = 1080; src.fps = 60; src.audioBitrate = 160'000;
