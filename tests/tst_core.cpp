@@ -13,6 +13,7 @@
 #include "games/EventSources.h"
 #include "games/GameCatalog.h"
 #include "games/Highlighter.h"
+#include "share/LinkShare.h"
 #include "share/YouTube.h"
 #include "ui/LibraryModel.h"
 
@@ -652,6 +653,28 @@ private slots:
         QVERIFY2(small.ok, qPrintable(small.error));
         QCOMPARE(small.startOffset, 2.5);
         QVERIFY2(small.duration > 2.2 && small.duration < 2.9, qPrintable(QString::number(small.duration)));
+        // Compressão do vídeo inteiro com outro limite (a do "Copiar link").
+        const Media::RemuxResult whole = Media::compressTo(mp4, dir.path() + "/whole.mp4", 0, r.duration, 190'000'000);
+        QVERIFY2(whole.ok, qPrintable(whole.error));
+        QVERIFY(whole.duration > 5.5);
+        QVERIFY(!Media::compressTo(mp4, dir.path() + "/stop.mp4", 0, r.duration, 190'000'000, &cancel).ok);
+        QVERIFY(!QFile::exists(dir.path() + "/stop.mp4"));
+        // Envio real ao catbox.moe: só com AEONIS_NET_TEST=1 (publica um vídeo sintético de 6 s).
+        if (qEnvironmentVariableIntValue("AEONIS_NET_TEST") == 1) {
+            LinkShare share;
+            QSignalSpy done(&share, &LinkShare::finished);
+            share.share(mp4);
+            QVERIFY(share.busy());
+            QVERIFY(done.wait(120'000));
+            const QList<QVariant> args = done.takeFirst();
+            QVERIFY2(args.at(0).toBool(), qPrintable(args.at(3).toString()));
+            qInfo() << "link:" << args.at(2).toString();
+            QVERIFY(args.at(2).toString().startsWith(QStringLiteral("https://files.catbox.moe/")));
+            QCOMPARE(share.linkFor(mp4), args.at(2).toString());
+            share.share(mp4); // de novo: reaproveita o link na hora
+            QCOMPARE(done.size(), 1);
+            QVERIFY(done.takeFirst().at(4).toBool());
+        }
         // Miniatura e duração do MP4.
         const double d = Media::thumbnail(mp4, dir.path() + "/t.jpg");
         QVERIFY(d > 5.5);
@@ -682,6 +705,38 @@ private slots:
         // Range de uma resposta 308.
         QCOMPARE(YouTube::confirmedBytes("bytes=0-8388607"), qint64(8388608));
         QCOMPARE(YouTube::confirmedBytes(""), qint64(0));
+    }
+
+    void linkShareRules()
+    {
+        // Resposta do catbox: só um link https de files.catbox.moe vale; mensagens de erro não.
+        QCOMPARE(LinkShare::parseResponse("https://files.catbox.moe/p6cwhw.mp4\n"),QStringLiteral("https://files.catbox.moe/p6cwhw.mp4"));
+        QVERIFY(LinkShare::parseResponse("").isEmpty());
+        QVERIFY(LinkShare::parseResponse("File too large").isEmpty());
+        QVERIFY(LinkShare::parseResponse("<html>502 Bad Gateway</html>").isEmpty());
+        QVERIFY(LinkShare::parseResponse("http://files.catbox.moe/x.mp4").isEmpty());
+        QVERIFY(LinkShare::parseResponse("https://evil.example/x.mp4").isEmpty());
+        QVERIFY(LinkShare::parseResponse("https://files.catbox.moe/").isEmpty());
+        // Acima de 200 MB comprime antes de enviar.
+        QVERIFY(!LinkShare::needsCompression(150'000'000));
+        QVERIFY(!LinkShare::needsCompression(LinkShare::CatboxLimit));
+        QVERIFY(LinkShare::needsCompression(LinkShare::CatboxLimit + 1));
+        // O link guardado só vale para o mesmo arquivo (tamanho e data).
+        const QDateTime t = QDateTime::fromString(QStringLiteral("2026-11-17T10:00:00.123Z"), Qt::ISODateWithMs);
+        const QVariantMap entry{{QStringLiteral("url"), QStringLiteral("https://files.catbox.moe/a.mp4")},
+                                {QStringLiteral("size"), 1234},
+                                {QStringLiteral("modified"), t.toUTC().toString(Qt::ISODateWithMs)}};
+        QVERIFY(LinkShare::entryValid(entry, 1234, t));
+        QVERIFY(!LinkShare::entryValid(entry, 1235, t));
+        QVERIFY(!LinkShare::entryValid(entry, 1234, t.addSecs(1)));
+        QVERIFY(!LinkShare::entryValid({}, 0, t));
+        // Compressão para o link: a meta de 190 MB cabe num vídeo de 15 min em 1080p60.
+        Media::SourceInfo src;
+        src.width = 1920; src.height = 1080; src.fps = 60; src.audioBitrate = 160'000;
+        const double scale = double(LinkShare::CompressLimit) / Media::DiscordLimitBytes;
+        const Media::CompressPlan plan = Media::compressPlan(src, 15 * 60, scale);
+        QVERIFY(plan.estimatedBytes <= LinkShare::CompressLimit);
+        QVERIFY(plan.height >= 540);
     }
 
 private:

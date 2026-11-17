@@ -212,11 +212,6 @@ FocusScope {
         }
     }
 
-    YouTubeDialog {
-        id: youtubeDialog
-        onClosed: p.forceActiveFocus()
-    }
-
     Connections {
         target: App
         function onTrimDone(ok, path) { p.trimming = false; if (ok) p.trim = null }
@@ -308,16 +303,23 @@ FocusScope {
                 onClicked: App.setSaved([p.media.path], !p.media.saved)
             }
             AButton { text: "Cortar"; iconName: "scissors"; enabled: p.duration > 0; onClicked: p.startTrim() }
+            // Copiar link: envia ao catbox.moe (comprime antes se passar de 200 MB) e copia o link do vídeo.
             AButton {
-                readonly property var yt: App.youtube
-                readonly property bool sending: yt.uploading && youtubeDialog.norm(yt.uploadPath) === youtubeDialog.norm(p.media ? p.media.path : "")
-                readonly property bool sent: { yt.uploads; return p.media ? yt.uploadedUrl(p.media.path) !== "" : false }
-                text: sending ? "Enviando " + Math.floor(yt.progress * 100) + "%" : sent ? "No YouTube" : "YouTube"
-                iconName: "youtube"
-                iconColor: sent || sending ? "#ff0033" : Theme.text
+                readonly property var ls: App.linkShare
+                readonly property string here: p.media ? p.media.path.toLowerCase().replace(/\//g, "\\") : ""
+                readonly property bool mine: ls.busy && ls.busyPath.toLowerCase().replace(/\//g, "\\") === here
+                readonly property bool sent: { ls.links; return p.media ? ls.linkFor(p.media.path) !== "" : false }
+                enabled: !!p.media && (mine || !ls.busy)
+                text: mine ? (ls.compressing ? "Comprimindo…" : "Enviando " + Math.floor(ls.progress * 100) + "%") : "Copiar link"
+                iconName: sent && !mine ? "check" : "link"
+                iconColor: sent || mine ? Theme.accent : Theme.text
                 ToolTip.visible: hovered
-                ToolTip.text: "Compartilhar este vídeo no YouTube"
-                onClicked: youtubeDialog.openFor(p.media)
+                ToolTip.text: mine ? "Clique para cancelar o envio"
+                    : ls.busy ? "Espere o envio do outro vídeo terminar"
+                    : sent ? "Copia de novo o link deste vídeo"
+                    : p.media && p.media.size > 200e6 ? "Comprime o vídeo para menos de 200 MB, envia ao catbox.moe e copia o link"
+                    : "Envia o vídeo ao catbox.moe e copia o link para mandar no Discord ou WhatsApp"
+                onClicked: mine ? ls.cancel() : App.shareLink(p.media.path)
             }
             AButton {
                 iconName: "folder"

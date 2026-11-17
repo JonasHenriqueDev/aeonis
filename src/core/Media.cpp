@@ -209,7 +209,8 @@ SourceInfo infoOf(AVFormatContext *in, int v, int a)
 }
 
 /// Corte com re-encode da imagem (x264, CompressPlan) para caber no Discord; o áudio é copiado.
-RemuxResult compressRange(const QString &source, const QString &output, double start, double end, double scale)
+RemuxResult compressRange(const QString &source, const QString &output, double start, double end, double scale,
+                          const std::atomic<bool> *cancel = nullptr)
 {
     RemuxResult r;
     Input in = openInput(source, true, &r.error);
@@ -340,6 +341,11 @@ RemuxResult compressRange(const QString &source, const QString &output, double s
         };
 
         while (!failed && !(videoDone && audioDone) && av_read_frame(in.get(), pkt.get()) >= 0) {
+            if (cancel && cancel->load()) {
+                r.error = QStringLiteral("cancelado");
+                failed = true;
+                break;
+            }
             if (pkt->stream_index == v && !videoDone) {
                 avcodec_send_packet(dec.get(), pkt.get());
                 takeFrames();
@@ -593,39 +599,47 @@ RemuxResult concat(const QStringList &segments, const QString &output, bool fast
     return r;
 }
 
+RemuxResult compressTo(const QString &source, const QString &output, double start, double end, qint64 limitBytes,
+                       const std::atomic<bool> *cancel)
+{
+    // A meta fica 5% abaixo do limite (19 MB para 20 MB). O CRF com teto quase sempre cabe de primeira; se
+    // passar, refaz com a meta proporcionalmente menor (só adianta se o trecho cabe no plano: trechos longos
+    // demais saem do mesmo jeito). A nova tentativa vai para um arquivo à parte: se falhar ou não diminuir,
+    // fica a anterior.
+    const double target = double(limitBytes) * CompressTargetBytes / DiscordLimitBytes;
+    double scale = double(limitBytes) / DiscordLimitBytes;
+    RemuxResult best = compressRange(source, output, start, end, scale, cancel);
+    if (!best.ok || compressPlan(probe(source), end - start, scale).estimatedBytes > limitBytes)
+        return best;
+    const QString retry = output + QStringLiteral(".retry.mp4");
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        const qint64 size = QFileInfo(output).size();
+        if (size <= limitBytes)
+            break;
+        Log::info(QStringLiteral("Vídeo comprimido com %1 MB: refazendo para caber em %2 MB.")
+                      .arg(size / 1e6, 0, 'f', 1).arg(limitBytes / 1e6, 0, 'f', 0));
+        scale *= 0.92 * target / double(size);
+        const RemuxResult r = compressRange(source, retry, start, end, scale, cancel);
+        if (!r.ok || QFileInfo(retry).size() >= size) {
+            QFile::remove(retry);
+            break;
+        }
+        QFile::remove(output);
+        if (!QFile::rename(retry, output)) {
+            QFile::remove(retry);
+            best.ok = false;
+            best.error = QStringLiteral("não foi possível substituir o arquivo comprimido");
+            return best;
+        }
+        best = r;
+    }
+    return best;
+}
+
 RemuxResult trim(const QString &source, const QString &output, double start, double end, bool compress)
 {
-    if (compress) {
-        // O CRF com teto quase sempre cabe de primeira; se passar do limite, refaz com a meta proporcionalmente
-        // menor (só adianta se o trecho cabe no plano: trechos longos demais saem do mesmo jeito).
-        // A nova tentativa vai para um arquivo à parte: se falhar ou não diminuir, fica a anterior.
-        RemuxResult best = compressRange(source, output, start, end, 1.0);
-        if (!best.ok || !compressPlan(probe(source), end - start).fits)
-            return best;
-        const QString retry = output + QStringLiteral(".retry.mp4");
-        double scale = 1.0;
-        for (int attempt = 0; attempt < 2; ++attempt) {
-            const qint64 size = QFileInfo(output).size();
-            if (size <= DiscordLimitBytes)
-                break;
-            Log::info(QStringLiteral("Corte comprimido com %1 MB: refazendo para caber em 20 MB.").arg(size / 1e6, 0, 'f', 1));
-            scale *= 0.92 * double(CompressTargetBytes) / double(size);
-            const RemuxResult r = compressRange(source, retry, start, end, scale);
-            if (!r.ok || QFileInfo(retry).size() >= size) {
-                QFile::remove(retry);
-                break;
-            }
-            QFile::remove(output);
-            if (!QFile::rename(retry, output)) {
-                QFile::remove(retry);
-                best.ok = false;
-                best.error = QStringLiteral("não foi possível substituir o corte");
-                return best;
-            }
-            best = r;
-        }
-        return best;
-    }
+    if (compress)
+        return compressTo(source, output, start, end, DiscordLimitBytes);
     RemuxResult r;
     Input in = openInput(source, true, &r.error);
     if (!in)

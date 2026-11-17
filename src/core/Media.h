@@ -62,4 +62,9 @@ CompressPlan compressPlan(const SourceInfo &source, double seconds, double scale
 /// `start` (bem mais lento; o áudio é copiado). Se o arquivo passar do limite, refaz com a meta mais apertada.
 RemuxResult trim(const QString &source, const QString &output, double start, double end, bool compress = false);
 
+/// Re-encoda [start, end] como no corte comprimido, mirando caber em `limitBytes` (meta 5% abaixo).
+/// `cancel` interrompe (sem gerar o arquivo).
+RemuxResult compressTo(const QString &source, const QString &output, double start, double end, qint64 limitBytes,
+                       const std::atomic<bool> *cancel = nullptr);
+
 } // namespace aeonis::Media

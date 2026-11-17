@@ -12,6 +12,7 @@
 #include "games/DeadlockSetup.h"
 #include "games/GameCatalog.h"
 #include "games/Highlighter.h"
+#include "share/LinkShare.h"
 #include "share/YouTube.h"
 
 #include <QDesktopServices>
@@ -59,6 +60,8 @@ QVariantList Backend::settingsFields() const { return SettingsSchema::fields(m_a
 QObject *Backend::updater() const { return m_app->updater(); }
 
 QObject *Backend::youtube() const { return m_app->youtube(); }
+
+QObject *Backend::linkShare() const { return m_app->linkShare(); }
 
 void Backend::setActive(bool active)
 {
@@ -344,6 +347,12 @@ void Backend::uploadToYouTube(const QString &path, const QVariantMap &video)
         meta.privacy = privacy;
     meta.madeForKids = video.value(QStringLiteral("madeForKids")).toBool();
     m_app->youtube()->upload(v, meta);
+}
+
+void Backend::shareLink(const QString &path)
+{
+    if (const QString v = safeVideo(path); !v.isEmpty())
+        m_app->linkShare()->share(v);
 }
 
 void Backend::copyText(const QString &text, const QString &message)

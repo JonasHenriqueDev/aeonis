@@ -35,6 +35,7 @@ class Hotkeys;
 class TrayIcon;
 class WindowHost;
 class YouTube;
+class LinkShare;
 
 class App : public QObject {
     Q_OBJECT
@@ -50,6 +51,7 @@ public:
     QVariantMap status() const;
     AutoUpdater *updater() const { return m_updater; }
     YouTube *youtube() const { return m_youtube; }
+    LinkShare *linkShare() const { return m_linkShare; }
 
     void showWindow(const QString &page);
     /// Encerramento do Windows: para a captura sem gerar a gravação (recuperada na próxima abertura).
@@ -108,6 +110,7 @@ private:
     EventSource *m_events = nullptr;
     AutoUpdater *m_updater = nullptr;
     YouTube *m_youtube = nullptr;
+    LinkShare *m_linkShare = nullptr;
     Backend *m_backend = nullptr;
     WindowHost *m_window = nullptr;
     UpdateSplash *m_splash = nullptr;

@@ -26,6 +26,7 @@ class Backend : public QObject {
     Q_PROPERTY(QVariantList settingsFields READ settingsFields NOTIFY settingsChanged)
     Q_PROPERTY(QObject *updater READ updater CONSTANT)
     Q_PROPERTY(QObject *youtube READ youtube CONSTANT)
+    Q_PROPERTY(QObject *linkShare READ linkShare CONSTANT)
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
     /// Deadlock instalado sem -condebug: { installed, known, condebug, dismissed } para o aviso da janela.
     Q_PROPERTY(QVariantMap deadlock READ deadlock NOTIFY deadlockChanged)
@@ -37,6 +38,7 @@ public:
     QVariantList settingsFields() const;
     QObject *updater() const;
     QObject *youtube() const;
+    QObject *linkShare() const;
     bool loading() const { return m_loading; }
     QVariantMap deadlock() const { return m_deadlock; }
 
@@ -62,6 +64,9 @@ public:
     /// Envia o vídeo ao YouTube. `video`: title, description, tags (separadas por vírgula),
     /// privacy (public | unlisted | private) e madeForKids.
     Q_INVOKABLE void uploadToYouTube(const QString &path, const QVariantMap &video);
+    /// "Copiar link": envia ao catbox.moe (comprimindo acima de 200 MB) e copia o link; reaproveita o
+    /// link se o arquivo já foi enviado.
+    Q_INVOKABLE void shareLink(const QString &path);
     /// Copia para a área de transferência e avisa com `message` (padrão: "Link copiado.").
     Q_INVOKABLE void copyText(const QString &text, const QString &message = {});
     /// Relê as opções de inicialização do Deadlock na Steam (responde com deadlockChanged).

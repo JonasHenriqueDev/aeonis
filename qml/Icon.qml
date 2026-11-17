@@ -36,6 +36,7 @@ Item {
         record: '<circle cx="12" cy="12" r="6" fill="CURRENT"/>',
         download: '<path d="M12 3v12M7 10l5 5 5-5M4 16v5h16v-5"/>',
         youtube: '<rect x="2.5" y="5.5" width="19" height="13" rx="4"/><path d="M10 9.3v5.4l4.6-2.7z" fill="CURRENT"/>',
+        link: '<path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/>',
         close: '<path d="M6 6l12 12M18 6L6 18"/>',
         // Eventos das partidas (traços no estilo Lucide).
         sword: '<path d="M14.5 17.5 3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2"/>',

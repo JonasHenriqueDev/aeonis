@@ -1,6 +1,6 @@
 ﻿cmake_minimum_required(VERSION 3.25)
 
-project(Aeonis VERSION 1.5.19 LANGUAGES CXX)
+project(Aeonis VERSION 1.5.20 LANGUAGES CXX)
 # A versão vem sempre do project() (não do cache: um valor antigo em cache gerou um app que se dizia
 # 1.0.0 dentro do pacote 1.1.0 e se atualizava em loop). Só o sufixo de pré-release é opcional.
 set(AEONIS_VERSION_SUFFIX "" CACHE STRING "Sufixo de pré-release (ex.: -beta1)")
@@ -69,6 +69,7 @@ add_library(aeonis_engine STATIC
     src/app/Hotkeys.cpp src/app/Hotkeys.h
     src/ui/LibraryModel.cpp src/ui/LibraryModel.h
     src/share/YouTube.cpp src/share/YouTube.h
+    src/share/LinkShare.cpp src/share/LinkShare.h
 )
 target_include_directories(aeonis_engine PUBLIC src)
 target_compile_definitions(aeonis_engine PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE

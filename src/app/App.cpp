@@ -15,10 +15,13 @@
 #include "games/EventSources.h"
 #include "games/GameWatcher.h"
 #include "games/Highlighter.h"
+#include "share/LinkShare.h"
 #include "share/YouTube.h"
 #include "ui/Backend.h"
 
+#include <QClipboard>
 #include <QCoreApplication>
+#include <QGuiApplication>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFileInfo>
@@ -152,6 +155,18 @@ App::App(bool minimized, QObject *parent) : QObject(parent), m_settings(Settings
         emit toast(message, ok ? QStringLiteral("info") : QStringLiteral("error"));
         if (!m_window->isOpen())
             notify(ok ? QStringLiteral("Enviado para o YouTube") : QStringLiteral("Envio para o YouTube"),
+                   ok ? QStringLiteral("%1\n%2").arg(QFileInfo(path).fileName(), url) : message,
+                   ok ? QSystemTrayIcon::Information : QSystemTrayIcon::Critical);
+    });
+
+    // "Copiar link" (catbox.moe): também segue com a janela fechada; o link vai para a área de transferência.
+    m_linkShare = new LinkShare(this);
+    connect(m_linkShare, &LinkShare::finished, this, [this](bool ok, const QString &path, const QString &url, const QString &message, bool reused) {
+        if (ok)
+            QGuiApplication::clipboard()->setText(url);
+        emit toast(ok ? QStringLiteral("%1 %2").arg(message, url) : message, ok ? QStringLiteral("info") : QStringLiteral("error"));
+        if (!reused && m_window && !m_window->isOpen())
+            notify(ok ? QStringLiteral("Link copiado") : QStringLiteral("Falha ao gerar o link"),
                    ok ? QStringLiteral("%1\n%2").arg(QFileInfo(path).fileName(), url) : message,
                    ok ? QSystemTrayIcon::Information : QSystemTrayIcon::Critical);
     });
