@@ -1,10 +1,11 @@
 #pragma once
-// "Copiar link": envia o vídeo ao catbox.moe (sem conta; o arquivo só some depois de 2 anos sem acesso) e
-// copia o link direto do .mp4, que o Discord e o WhatsApp mostram como vídeo. O catbox aceita até 200 MB:
-// acima disso o vídeo é comprimido antes (Media::compressTo, como o "Comprimir" do corte, mirando menos de
-// 190 MB) e o arquivo temporário é apagado depois do envio. Os links ficam em links.json e são
-// reaproveitados enquanto o arquivo não mudar. O Streamable não serve: a API dele não tem envio oficial e
-// o endpoint não documentado exige usuário e senha.
+// "Copiar link": envia o vídeo ao qu.ax (sem conta, armazenamento "permanente": só some depois de muito
+// tempo sem acesso) e copia o link da página dele, que traz as tags og:video: o Discord e o WhatsApp
+// mostram o vídeo na conversa. O qu.ax aceita até 256 MB: acima de 250 MB o vídeo é comprimido antes
+// (Media::compressTo, como o "Comprimir" do corte, mirando menos de 240 MB) e o temporário é apagado depois
+// do envio. Os links ficam em links.json e são reaproveitados enquanto o arquivo não mudar.
+// Hosts descartados: Streamable (sem envio oficial; o endpoint não documentado exige usuário e senha) e
+// catbox.moe (responde HEAD com Content-Length: 0 e o Discord não gera o preview).
 
 #include <QDateTime>
 #include <QNetworkAccessManager>
@@ -27,8 +28,8 @@ class LinkShare : public QObject {
     Q_PROPERTY(double progress READ progress NOTIFY progressChanged)
     Q_PROPERTY(QVariantMap links READ links NOTIFY changed)
 public:
-    static constexpr qint64 CatboxLimit = 200LL * 1000 * 1000; // "Uploads up to 200 MB"
-    static constexpr qint64 CompressLimit = 190LL * 1000 * 1000; // folga para o contêiner e o formulário
+    static constexpr qint64 UploadLimit = 250LL * 1000 * 1000;   // "Max upload size is 256MB", com folga
+    static constexpr qint64 CompressLimit = 240LL * 1000 * 1000; // meta da compressão
 
     explicit LinkShare(QObject *parent = nullptr);
     ~LinkShare() override;
@@ -48,10 +49,10 @@ public:
     void share(const QString &path);
 
     // Regras (testadas em tst_core).
-    static bool needsCompression(qint64 size) { return size > CatboxLimit; }
-    /// Link devolvido pelo catbox (texto puro), ou vazio se a resposta não for um link dele.
+    static bool needsCompression(qint64 size) { return size > UploadLimit; }
+    /// Link da página do vídeo na resposta JSON do qu.ax, ou vazio se a resposta não trouxer um link dele.
     static QString parseResponse(const QByteArray &body);
-    /// Entrada de links.json ainda vale para um arquivo com esse tamanho e data?
+    /// Entrada de links.json ainda vale para um arquivo com esse tamanho e data? (links antigos do catbox não)
     static bool entryValid(const QVariantMap &entry, qint64 size, const QDateTime &modified);
 
 signals:

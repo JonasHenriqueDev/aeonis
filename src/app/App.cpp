@@ -159,7 +159,7 @@ App::App(bool minimized, QObject *parent) : QObject(parent), m_settings(Settings
                    ok ? QSystemTrayIcon::Information : QSystemTrayIcon::Critical);
     });
 
-    // "Copiar link" (catbox.moe): também segue com a janela fechada; o link vai para a área de transferência.
+    // "Copiar link" (qu.ax): também segue com a janela fechada; o link vai para a área de transferência.
     m_linkShare = new LinkShare(this);
     connect(m_linkShare, &LinkShare::finished, this, [this](bool ok, const QString &path, const QString &url, const QString &message, bool reused) {
         if (ok)

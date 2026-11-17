@@ -8,6 +8,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHttpMultiPart>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkReply>
@@ -21,7 +22,8 @@ namespace aeonis {
 
 namespace {
 
-constexpr const char *ApiUrl = "https://catbox.moe/user/api.php";
+constexpr const char *ApiUrl = "https://qu.ax/upload";
+constexpr const char *Host = "qu.ax";
 
 QString linksFile() { return Paths::appData() + QStringLiteral("/links.json"); }
 
@@ -56,7 +58,7 @@ QString LinkShare::key(const QString &path) { return QDir::toNativeSeparators(QF
 
 bool LinkShare::entryValid(const QVariantMap &entry, qint64 size, const QDateTime &modified)
 {
-    return !entry.value(QStringLiteral("url")).toString().isEmpty()
+    return QUrl(entry.value(QStringLiteral("url")).toString()).host() == QLatin1String(Host)
         && entry.value(QStringLiteral("size")).toLongLong() == size
         && entry.value(QStringLiteral("modified")).toString() == stamp(modified);
 }
@@ -72,10 +74,15 @@ QString LinkShare::linkFor(const QString &path) const
 
 QString LinkShare::parseResponse(const QByteArray &body)
 {
-    const QString text = QString::fromUtf8(body).trimmed();
+    // {"success":true,"files":[{"url":"https://qu.ax/iG3Ah", ...}]}
+    const QJsonObject root = QJsonDocument::fromJson(body).object();
+    if (!root.value(QLatin1String("success")).toBool())
+        return {};
+    const QString text = root.value(QLatin1String("files")).toArray().first().toObject().value(QLatin1String("url")).toString();
+    static const QRegularExpression id(QStringLiteral("^/[A-Za-z0-9_-]+(\\.[A-Za-z0-9]+)?$"));
     const QUrl url(text, QUrl::StrictMode);
-    if (!url.isValid() || url.scheme() != QLatin1String("https") || url.host() != QLatin1String("files.catbox.moe")
-        || url.path().size() < 2 || text.contains(QLatin1Char(' ')))
+    if (!url.isValid() || url.scheme() != QLatin1String("https") || url.host() != QLatin1String(Host)
+        || !id.match(url.path()).hasMatch() || url.hasQuery() || url.hasFragment())
         return {};
     return url.toString();
 }
@@ -109,7 +116,7 @@ void LinkShare::share(const QString &path)
         return;
     }
 
-    // Grande demais para o catbox: comprime para um arquivo temporário e envia esse.
+    // Grande demais para o qu.ax: comprime para um arquivo temporário e envia esse.
     m_compressing = true;
     emit changed();
     const quint64 job = m_job;
@@ -139,9 +146,9 @@ void LinkShare::share(const QString &path)
             finish(false, {}, QStringLiteral("Falha ao comprimir o vídeo (veja o log)."));
             return;
         }
-        if (QFileInfo(temp).size() > CatboxLimit) {
+        if (QFileInfo(temp).size() > UploadLimit) {
             QFile::remove(temp);
-            finish(false, {}, QStringLiteral("Mesmo comprimido o vídeo passa de 200 MB. Corte um trecho e compartilhe o corte."));
+            finish(false, {}, QStringLiteral("Mesmo comprimido o vídeo passa de 250 MB. Corte um trecho e compartilhe o corte."));
             return;
         }
         m_temp = temp;
@@ -159,16 +166,16 @@ void LinkShare::upload(const QString &file)
         return;
     }
     auto *form = new QHttpMultiPart(QHttpMultiPart::FormDataType);
-    QHttpPart reqtype;
-    reqtype.setHeader(QNetworkRequest::ContentDispositionHeader, QStringLiteral("form-data; name=\"reqtype\""));
-    reqtype.setBody("fileupload");
-    form->append(reqtype);
+    QHttpPart expiry; // -1 = "permanente"
+    expiry.setHeader(QNetworkRequest::ContentDispositionHeader, QStringLiteral("form-data; name=\"expiry\""));
+    expiry.setBody("-1");
+    form->append(expiry);
     QHttpPart filePart;
-    // Nome ASCII fixo: o catbox troca o nome de qualquer jeito e só olha a extensão.
+    // Nome ASCII fixo: o qu.ax troca o nome de qualquer jeito e só olha a extensão.
     const QString suffix = QFileInfo(file).suffix().toLower();
     const QString ext = suffix.isEmpty() || suffix.contains(QRegularExpression(QStringLiteral("[^a-z0-9]"))) ? QStringLiteral("mp4") : suffix;
     filePart.setHeader(QNetworkRequest::ContentDispositionHeader,
-                       QStringLiteral("form-data; name=\"fileToUpload\"; filename=\"aeonis.%1\"").arg(ext));
+                       QStringLiteral("form-data; name=\"files[]\"; filename=\"aeonis.%1\"").arg(ext));
     filePart.setHeader(QNetworkRequest::ContentTypeHeader, ext == QLatin1String("mp4") ? "video/mp4" : "application/octet-stream");
     filePart.setBodyDevice(body);
     body->setParent(form);
@@ -198,16 +205,16 @@ void LinkShare::upload(const QString &file)
             Log::warn(QStringLiteral("Link: falha de rede: %1").arg(reply->errorString()));
             finish(false, {}, reply->error() == QNetworkReply::OperationCanceledError
                                   ? QStringLiteral("O envio ficou parado e foi interrompido. Tente de novo.")
-                                  : QStringLiteral("Sem conexão com o catbox.moe. Tente de novo."));
+                                  : QStringLiteral("Sem conexão com o qu.ax. Tente de novo."));
             return;
         }
         const QString url = parseResponse(data);
         if (url.isEmpty()) {
             const QString answer = QString::fromUtf8(data.left(200)).simplified();
-            Log::warn(QStringLiteral("Link: catbox respondeu HTTP %1: %2").arg(status).arg(answer));
+            Log::warn(QStringLiteral("Link: qu.ax respondeu HTTP %1: %2").arg(status).arg(answer));
             finish(false, {}, answer.isEmpty() || answer.startsWith(QLatin1Char('<'))
-                                  ? QStringLiteral("O catbox.moe recusou o envio (HTTP %1).").arg(status)
-                                  : QStringLiteral("O catbox.moe recusou o envio: %1").arg(answer));
+                                  ? QStringLiteral("O qu.ax recusou o envio (HTTP %1).").arg(status)
+                                  : QStringLiteral("O qu.ax recusou o envio: %1").arg(answer));
             return;
         }
         finish(true, url, QStringLiteral("Link copiado."));

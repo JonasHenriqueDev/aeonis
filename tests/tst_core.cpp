@@ -659,7 +659,7 @@ private slots:
         QVERIFY(whole.duration > 5.5);
         QVERIFY(!Media::compressTo(mp4, dir.path() + "/stop.mp4", 0, r.duration, 190'000'000, &cancel).ok);
         QVERIFY(!QFile::exists(dir.path() + "/stop.mp4"));
-        // Envio real ao catbox.moe: só com AEONIS_NET_TEST=1 (publica um vídeo sintético de 6 s).
+        // Envio real ao qu.ax: só com AEONIS_NET_TEST=1 (publica um vídeo sintético de 6 s).
         if (qEnvironmentVariableIntValue("AEONIS_NET_TEST") == 1) {
             LinkShare share;
             QSignalSpy done(&share, &LinkShare::finished);
@@ -669,7 +669,7 @@ private slots:
             const QList<QVariant> args = done.takeFirst();
             QVERIFY2(args.at(0).toBool(), qPrintable(args.at(3).toString()));
             qInfo() << "link:" << args.at(2).toString();
-            QVERIFY(args.at(2).toString().startsWith(QStringLiteral("https://files.catbox.moe/")));
+            QVERIFY(args.at(2).toString().startsWith(QStringLiteral("https://qu.ax/")));
             QCOMPARE(share.linkFor(mp4), args.at(2).toString());
             share.share(mp4); // de novo: reaproveita o link na hora
             QCOMPARE(done.size(), 1);
@@ -709,28 +709,34 @@ private slots:
 
     void linkShareRules()
     {
-        // Resposta do catbox: só um link https de files.catbox.moe vale; mensagens de erro não.
-        QCOMPARE(LinkShare::parseResponse("https://files.catbox.moe/p6cwhw.mp4\n"),QStringLiteral("https://files.catbox.moe/p6cwhw.mp4"));
+        // Resposta do qu.ax: só um link https da página no qu.ax vale; erros e outros hosts não.
+        QCOMPARE(LinkShare::parseResponse("{\"files\":[{\"expires\":1797479512,\"file_name\":\"iG3Ah\",\"size\":152507,\"url\":\"https://qu.ax/iG3Ah\"}],\"success\":true}"),
+                 QStringLiteral("https://qu.ax/iG3Ah"));
         QVERIFY(LinkShare::parseResponse("").isEmpty());
         QVERIFY(LinkShare::parseResponse("File too large").isEmpty());
         QVERIFY(LinkShare::parseResponse("<html>502 Bad Gateway</html>").isEmpty());
-        QVERIFY(LinkShare::parseResponse("http://files.catbox.moe/x.mp4").isEmpty());
-        QVERIFY(LinkShare::parseResponse("https://evil.example/x.mp4").isEmpty());
-        QVERIFY(LinkShare::parseResponse("https://files.catbox.moe/").isEmpty());
-        // Acima de 200 MB comprime antes de enviar.
+        QVERIFY(LinkShare::parseResponse("{\"success\":false,\"files\":[{\"url\":\"https://qu.ax/iG3Ah\"}]}").isEmpty());
+        QVERIFY(LinkShare::parseResponse("{\"success\":true,\"files\":[{\"url\":\"http://qu.ax/iG3Ah\"}]}").isEmpty());
+        QVERIFY(LinkShare::parseResponse("{\"success\":true,\"files\":[{\"url\":\"https://evil.example/iG3Ah\"}]}").isEmpty());
+        QVERIFY(LinkShare::parseResponse("{\"success\":true,\"files\":[{\"url\":\"https://qu.ax/\"}]}").isEmpty());
+        QVERIFY(LinkShare::parseResponse("{\"success\":true,\"files\":[]}").isEmpty());
+        // Acima de 250 MB comprime antes de enviar.
         QVERIFY(!LinkShare::needsCompression(150'000'000));
-        QVERIFY(!LinkShare::needsCompression(LinkShare::CatboxLimit));
-        QVERIFY(LinkShare::needsCompression(LinkShare::CatboxLimit + 1));
+        QVERIFY(!LinkShare::needsCompression(LinkShare::UploadLimit));
+        QVERIFY(LinkShare::needsCompression(LinkShare::UploadLimit + 1));
         // O link guardado só vale para o mesmo arquivo (tamanho e data).
         const QDateTime t = QDateTime::fromString(QStringLiteral("2026-11-17T10:00:00.123Z"), Qt::ISODateWithMs);
-        const QVariantMap entry{{QStringLiteral("url"), QStringLiteral("https://files.catbox.moe/a.mp4")},
+        const QVariantMap entry{{QStringLiteral("url"), QStringLiteral("https://qu.ax/iG3Ah")},
                                 {QStringLiteral("size"), 1234},
                                 {QStringLiteral("modified"), t.toUTC().toString(Qt::ISODateWithMs)}};
         QVERIFY(LinkShare::entryValid(entry, 1234, t));
         QVERIFY(!LinkShare::entryValid(entry, 1235, t));
         QVERIFY(!LinkShare::entryValid(entry, 1234, t.addSecs(1)));
         QVERIFY(!LinkShare::entryValid({}, 0, t));
-        // Compressão para o link: a meta de 190 MB cabe num vídeo de 15 min em 1080p60.
+        QVariantMap old = entry; // links do catbox (1.5.20/1.5.21) não geram preview no Discord: envia de novo
+        old.insert(QStringLiteral("url"), QStringLiteral("https://files.catbox.moe/a.mp4"));
+        QVERIFY(!LinkShare::entryValid(old, 1234, t));
+        // Compressão para o link: a meta de 240 MB cabe num vídeo de 15 min em 1080p60.
         Media::SourceInfo src;
         src.width = 1920; src.height = 1080; src.fps = 60; src.audioBitrate = 160'000;
         const double scale = double(LinkShare::CompressLimit) / Media::DiscordLimitBytes;

@@ -303,7 +303,7 @@ FocusScope {
                 onClicked: App.setSaved([p.media.path], !p.media.saved)
             }
             AButton { text: "Cortar"; iconName: "scissors"; enabled: p.duration > 0; onClicked: p.startTrim() }
-            // Copiar link (só clipes): envia ao catbox.moe (comprime antes se passar de 200 MB) e copia o link.
+            // Copiar link (só clipes): envia ao qu.ax (comprime antes se passar de 250 MB) e copia o link.
             AButton {
                 visible: !!p.media && p.media.kind !== "full"
                 readonly property var ls: App.linkShare
@@ -318,8 +318,8 @@ FocusScope {
                 ToolTip.text: mine ? "Clique para cancelar o envio"
                     : ls.busy ? "Espere o envio do outro vídeo terminar"
                     : sent ? "Copia de novo o link deste vídeo"
-                    : p.media && p.media.size > 200e6 ? "Comprime o vídeo para menos de 200 MB, envia ao catbox.moe e copia o link"
-                    : "Envia o vídeo ao catbox.moe e copia o link para mandar no Discord ou WhatsApp"
+                    : p.media && p.media.size > 250e6 ? "Comprime o vídeo para menos de 250 MB, envia ao qu.ax e copia o link"
+                    : "Envia o vídeo ao qu.ax e copia o link para mandar no Discord ou WhatsApp"
                 onClicked: mine ? ls.cancel() : App.shareLink(p.media.path)
             }
             AButton {
