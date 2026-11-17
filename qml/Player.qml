@@ -303,8 +303,9 @@ FocusScope {
                 onClicked: App.setSaved([p.media.path], !p.media.saved)
             }
             AButton { text: "Cortar"; iconName: "scissors"; enabled: p.duration > 0; onClicked: p.startTrim() }
-            // Copiar link: envia ao catbox.moe (comprime antes se passar de 200 MB) e copia o link do vídeo.
+            // Copiar link (só clipes): envia ao catbox.moe (comprime antes se passar de 200 MB) e copia o link.
             AButton {
+                visible: !!p.media && p.media.kind !== "full"
                 readonly property var ls: App.linkShare
                 readonly property string here: p.media ? p.media.path.toLowerCase().replace(/\//g, "\\") : ""
                 readonly property bool mine: ls.busy && ls.busyPath.toLowerCase().replace(/\//g, "\\") === here

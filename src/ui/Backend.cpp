@@ -351,8 +351,15 @@ void Backend::uploadToYouTube(const QString &path, const QVariantMap &video)
 
 void Backend::shareLink(const QString &path)
 {
-    if (const QString v = safeVideo(path); !v.isEmpty())
-        m_app->linkShare()->share(v);
+    const QString v = safeVideo(path);
+    if (v.isEmpty())
+        return;
+    // Só clipes: partidas completas são grandes demais para virar link (corte um trecho antes).
+    if (LibraryModel::kindFromLabel(LibraryModel::labelFromName(QFileInfo(v).completeBaseName())) == QLatin1String("full")) {
+        emit toast(QStringLiteral("Partidas completas não geram link. Corte um trecho e compartilhe o corte."), QStringLiteral("error"));
+        return;
+    }
+    m_app->linkShare()->share(v);
 }
 
 void Backend::copyText(const QString &text, const QString &message)

@@ -74,7 +74,7 @@ Um processo só, C++20 + Qt 6 + FFmpeg (libav* linkado estaticamente via vcpkg).
   `Highlighter`, que junta eventos próximos num único clipe.
 - **YouTube** (`share/YouTube`): login OAuth no navegador (loopback 127.0.0.1 + PKCE), token no Gerenciador de
   Credenciais do Windows, upload resumable em partes de 8 MB; links enviados em `youtube.json`. Fora da UI desde a 1.5.20
-  (`qml/YouTubeDialog` sem uso): o player usa **Copiar link** (`share/LinkShare`, catbox.moe anônimo, até 200 MB; acima
+  (`qml/YouTubeDialog` sem uso): o player usa **Copiar link** só em clipes (`share/LinkShare`, catbox.moe anônimo, até 200 MB; acima
   comprime com `Media::compressTo`), links em `links.json`. `AEONIS_NET_TEST=1` faz o `tst_core` enviar de verdade.
 - **Histórico** (`core/Library`): `%LOCALAPPDATA%\Aeonis\library.jsonl`, append-only, no formato da antiga
   versão C# (sessões, clipes, eventos) mais `info` (campeão, KDA, fila, resultado e o 0:00 do relógio do LoL;
